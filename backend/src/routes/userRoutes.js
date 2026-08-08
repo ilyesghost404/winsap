@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const { 
   login,
+  faceLogin,
   forgotPassword,
   resetPassword,
   changePassword,
@@ -27,6 +28,7 @@ const { requireAuth, authorizeRoles } = require("../middleware/authMiddleware");
 
 // Public authentication routes
 router.post("/login", login);
+router.post("/face-login", faceLogin);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password", resetPassword);
 router.post("/activate-account", activateAccount);

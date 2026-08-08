@@ -14,7 +14,8 @@ import {
   User,
   ShieldCheck,
   QrCode,
-  Building2
+  Building2,
+  ClipboardList
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -40,6 +41,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/leave-requests', label: 'Leave Requests', icon: CalendarDays },
         { path: '/holidays', label: 'Holidays', icon: CalendarRange },
         { path: '/reports', label: 'Reports', icon: BarChart3 },
+        { path: '/cra', label: 'CRA', icon: ClipboardList },
         { path: '/attendance-verification', label: 'QR Portal', icon: QrCode }
       );
     } else if (user?.role === 'employee') {
@@ -47,7 +49,8 @@ const Sidebar = ({ isOpen, onClose }) => {
         { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
         { path: '/attendance', label: 'My Attendance', icon: CalendarCheck },
         { path: '/leave-requests', label: 'My Requests', icon: CalendarDays },
-        { path: '/holidays', label: 'Holidays', icon: CalendarRange }
+        { path: '/holidays', label: 'Holidays', icon: CalendarRange },
+        { path: '/cra', label: 'My CRA', icon: ClipboardList }
       );
     }
 

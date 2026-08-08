@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import { 
   Plus, Edit2, Trash2, CalendarDays, Clock, FileText, 
-  CheckCircle2, XCircle, Search, Umbrella, Activity, BookOpen
+  CheckCircle2, XCircle, Search, Umbrella, Activity, BookOpen, AlertTriangle, Laptop
 } from 'lucide-react';
 import Card from '../Card';
 import Button from '../Button';
@@ -11,10 +11,12 @@ import LoadingSpinner from '../LoadingSpinner';
 import EmptyState from '../EmptyState';
 import Pagination from '../Pagination';
 import { getAbsences, createAbsence, updateAbsence, deleteAbsence } from '../../services/absenceService';
+import { getMyLeaveBalance } from '../../services/leaveBalanceService';
 
 const TYPE_CONFIG = {
   'Vacation': { icon: Umbrella, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', ring: 'ring-blue-600' },
   'Sick Leave': { icon: Activity, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200', ring: 'ring-red-600' },
+  'Telework': { icon: Laptop, color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-200', ring: 'ring-indigo-600' },
   'Training': { icon: BookOpen, color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-200', ring: 'ring-purple-600' },
   'Other': { icon: FileText, color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200', ring: 'ring-slate-600' },
 };
@@ -57,6 +59,19 @@ const EmployeeLeaveRequestsView = () => {
     reason: '',
   });
 
+  const [leaveBalance, setLeaveBalance] = useState({ paidLeave: 0, sickLeave: 0 });
+
+  const fetchLeaveBalance = async () => {
+    try {
+      const res = await getMyLeaveBalance();
+      if (res.success && res.data) {
+        setLeaveBalance(res.data);
+      }
+    } catch (error) {
+      console.error('Error fetching leave balance:', error);
+    }
+  };
+
   const fetchData = async () => {
     try {
       setLoading(true);
@@ -64,6 +79,7 @@ const EmployeeLeaveRequestsView = () => {
       setAbsences(absencesData.data || []);
       setTotal(absencesData.total || 0);
       setTotalPages(absencesData.totalPages || 0);
+      await fetchLeaveBalance();
     } catch (error) {
       console.error('Error fetching absences:', error);
       toast.error('Failed to load your leave requests');
@@ -150,6 +166,38 @@ const EmployeeLeaveRequestsView = () => {
     }
   };
 
+  const handleTomorrowRequest = async () => {
+    if (window.confirm("Are you sure you want to request to work from home tomorrow?")) {
+      try {
+        setIsSubmitting(true);
+        
+        const today = new Date();
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        
+        const year = tomorrow.getFullYear();
+        const month = String(tomorrow.getMonth() + 1).padStart(2, '0');
+        const day = String(tomorrow.getDate()).padStart(2, '0');
+        const tomorrowStr = `${year}-${month}-${day}`;
+
+        await createAbsence({
+          type: 'Telework',
+          start_date: tomorrowStr,
+          end_date: tomorrowStr,
+          reason: 'Work from home tomorrow (Quick request)'
+        });
+        
+        toast.success("Tomorrow's remote work request submitted successfully!");
+        fetchData();
+      } catch (error) {
+        console.error("Error WFH tomorrow:", error);
+        toast.error(error?.response?.data?.message || "Failed to submit request for tomorrow");
+      } finally {
+        setIsSubmitting(false);
+      }
+    }
+  };
+
   const filteredAbsences = Array.isArray(absences) ? absences.filter(a => {
     const matchesStatus = statusFilter === 'All' || a.status === statusFilter;
     const matchesType = typeFilter === 'All' || a.type === typeFilter;
@@ -165,9 +213,19 @@ const EmployeeLeaveRequestsView = () => {
           <h1 className="text-3xl font-bold text-slate-800 tracking-tight">My Requests</h1>
           <p className="text-slate-500 font-medium mt-1">Manage and track your leave applications</p>
         </div>
-        <Button icon={Plus} onClick={handleAdd} className="shadow-lg hover:shadow-blue-500/25 transition-all px-6 py-2.5">
-          New Request
-        </Button>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={handleTomorrowRequest}
+            disabled={isSubmitting}
+            className="inline-flex items-center justify-center gap-2 py-2.5 px-5 rounded-xl font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 hover:text-indigo-700 transition-all disabled:opacity-50 cursor-pointer"
+          >
+            <Laptop size={16} />
+            Work From Home Tomorrow
+          </button>
+          <Button icon={Plus} onClick={handleAdd} className="shadow-lg hover:shadow-blue-500/25 transition-all px-6 py-2.5" disabled={isSubmitting}>
+            New Request
+          </Button>
+        </div>
       </div>
 
       {/* Filters Bar */}
@@ -334,8 +392,8 @@ const EmployeeLeaveRequestsView = () => {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-3">Leave Type <span className="text-red-500">*</span></label>
-            <div className="grid grid-cols-2 gap-3">
-              {['Vacation', 'Sick Leave', 'Training', 'Other'].map(type => {
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
+              {['Vacation', 'Sick Leave', 'Telework', 'Training', 'Other'].map(type => {
                 const conf = TYPE_CONFIG[type];
                 const Icon = conf.icon;
                 const isSelected = formData.type === type;
@@ -356,6 +414,71 @@ const EmployeeLeaveRequestsView = () => {
                 )
               })}
             </div>
+
+            {/* Leave Balance Information / Warning */}
+            {(() => {
+              if (formData.type === 'Telework') {
+                return (
+                  <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex items-center gap-3 animate-in fade-in duration-200">
+                    <Laptop className="text-indigo-600 flex-shrink-0" size={20} />
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Telework / Remote Work</span>
+                      <span className="text-xs font-semibold text-indigo-900 mt-1 block">
+                        This request is for Remote Work and will <span className="font-bold underline text-indigo-700">NOT</span> affect your leave balance.
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
+
+              const balanceKey = formData.type === 'Vacation' ? 'paidLeave' : formData.type === 'Sick Leave' ? 'sickLeave' : null;
+              const available = balanceKey ? leaveBalance[balanceKey] : null;
+              
+              // Calculate requested working days
+              let requestedDays = 0;
+              if (formData.start_date && formData.end_date) {
+                const start = new Date(formData.start_date);
+                const end = new Date(formData.end_date);
+                if (end >= start) {
+                  const current = new Date(start);
+                  while (current <= end) {
+                    const day = current.getDay();
+                    if (day !== 0 && day !== 6) {
+                      requestedDays++;
+                    }
+                    current.setDate(current.getDate() + 1);
+                  }
+                }
+              }
+              const showBalanceWarning = available !== null && requestedDays > available;
+
+              return balanceKey ? (
+                <div className="space-y-3">
+                  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Available Balance</span>
+                      <span className="text-sm font-bold text-slate-700 mt-1 block">
+                        {formData.type === 'Vacation' ? 'Paid Leave (Congés payés)' : 'Sick Leave (Congés maladie)'}: <span className="text-blue-600 text-base">{available} days</span> remaining
+                      </span>
+                    </div>
+                    {requestedDays > 0 && (
+                      <div className="text-left sm:text-right sm:border-l sm:border-slate-200 sm:pl-4">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Requested Duration</span>
+                        <span className="text-sm font-bold text-slate-700 mt-1 block">
+                          {requestedDays} working day{requestedDays > 1 ? 's' : ''}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  {showBalanceWarning && (
+                    <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 text-xs text-amber-800 flex items-center gap-2 animate-in slide-in-from-top duration-200 font-medium">
+                      <AlertTriangle size={18} className="flex-shrink-0 text-amber-600" />
+                      <span>Warning: The requested leave duration ({requestedDays} days) exceeds your available balance ({available} days). This request might be rejected.</span>
+                    </div>
+                  )}
+                </div>
+              ) : null;
+            })()}
           </div>
 
           <div className="grid grid-cols-2 gap-5">

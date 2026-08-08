@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Lock, Mail, Eye, EyeOff, CalendarRange, Loader2 } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff, CalendarRange, Loader2, Camera } from 'lucide-react';
 import Button from '../components/Button';
 
 const Login = () => {
@@ -146,6 +146,23 @@ const Login = () => {
                 ) : (
                   'Sign In'
                 )}
+              </button>
+            </div>
+
+            <div className="relative flex py-2 items-center">
+              <div className="flex-grow border-t border-slate-700/50"></div>
+              <span className="flex-shrink mx-4 text-slate-500 text-xs font-bold uppercase tracking-wider">Or</span>
+              <div className="flex-grow border-t border-slate-700/50"></div>
+            </div>
+
+            <div>
+              <button
+                type="button"
+                onClick={() => navigate('/face-login')}
+                className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-slate-750/50 rounded-2xl text-sm font-bold text-slate-300 bg-slate-800/40 hover:bg-slate-800/80 hover:text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-blue-500 transition-all duration-300 cursor-pointer border-slate-700/50"
+              >
+                <Camera size={18} className="text-blue-500" />
+                Sign in with Face ID
               </button>
             </div>
           </form>

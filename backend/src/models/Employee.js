@@ -12,7 +12,7 @@ class Employee {
         let whereClause = '';
 
         if (search) {
-            whereClause = ` WHERE e.matricule ILIKE $1 OR e.first_name ILIKE $1 OR e.last_name ILIKE $1 OR e.email ILIKE $1 OR d.name ILIKE $1`;
+            whereClause = ` WHERE e.matricule ILIKE $1 OR e.first_name ILIKE $1 OR e.last_name ILIKE $1 OR (e.first_name || ' ' || e.last_name) ILIKE $1 OR (e.last_name || ' ' || e.first_name) ILIKE $1 OR e.email ILIKE $1 OR d.name ILIKE $1`;
             queryParams.push(`%${search}%`);
             dataQuery += whereClause;
             countQuery += whereClause;

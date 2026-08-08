@@ -599,6 +599,86 @@ const getAttendanceMatrix = async (req, res) => {
     }
 };
 
+/**
+ * GET /api/reports/employees/:employeeId/year/:year
+ * Returns JSON data for yearly employee activity.
+ */
+const getEmployeeYearlyReport = async (req, res) => {
+  try {
+    const employeeId = parseInt(req.params.employeeId, 10);
+    const year = parseInt(req.params.year, 10);
+
+    if (req.user.role === 'employee') {
+      return res.status(403).json({ success: false, message: "Access forbidden" });
+    }
+
+    const employeeReportService = require("../services/employeeReportService");
+    const reportData = await employeeReportService.getReportData(employeeId, year);
+    res.json({ success: true, data: reportData });
+  } catch (error) {
+    console.error("Error in getEmployeeYearlyReport:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to generate report" });
+  }
+};
+
+const exportEmployeeYearlyExcel = async (req, res) => {
+  try {
+    const employeeId = parseInt(req.params.employeeId, 10);
+    const year = parseInt(req.params.year, 10);
+
+    if (req.user.role === 'employee') {
+      return res.status(403).json({ success: false, message: "Access forbidden" });
+    }
+
+    const employeeReportService = require("../services/employeeReportService");
+    const reportData = await employeeReportService.getReportData(employeeId, year);
+    const workbook = employeeReportService.generateExcelReport(reportData);
+
+    const firstName = reportData.employee.fullName.split(" ")[0] || "Employee";
+    const fileName = `Employee_Report_${firstName}_${year}.xlsx`;
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${fileName}"`
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error("Error in exportEmployeeYearlyExcel:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to export Excel report" });
+  }
+};
+
+const exportEmployeeYearlyPdf = async (req, res) => {
+  try {
+    const employeeId = parseInt(req.params.employeeId, 10);
+    const year = parseInt(req.params.year, 10);
+
+    if (req.user.role === 'employee') {
+      return res.status(403).json({ success: false, message: "Access forbidden" });
+    }
+
+    const employeeReportService = require("../services/employeeReportService");
+    const reportData = await employeeReportService.getReportData(employeeId, year);
+
+    const firstName = reportData.employee.fullName.split(" ")[0] || "Employee";
+    const fileName = `Employee_Report_${firstName}_${year}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+    employeeReportService.generatePdfReport(reportData, res);
+  } catch (error) {
+    console.error("Error in exportEmployeeYearlyPdf:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to export PDF report" });
+  }
+};
+
 module.exports = {
     getReportStats,
     getMonthlyAbsenceEvolution,
@@ -608,5 +688,8 @@ module.exports = {
     getDetailedAbsences,
     exportToExcel,
     getMonthlyReport,
-    getAttendanceMatrix
+    getAttendanceMatrix,
+    getEmployeeYearlyReport,
+    exportEmployeeYearlyExcel,
+    exportEmployeeYearlyPdf
 };

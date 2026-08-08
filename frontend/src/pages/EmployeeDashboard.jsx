@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { 
+import {
   Users, Clock, CheckCircle2, CalendarDays, Calendar as CalendarIcon, 
-  Activity, CalendarOff, Hash, Briefcase, Calendar, ChevronRight
+  Activity, CalendarOff, Hash, Briefcase, Calendar, ChevronRight, ClipboardList
 } from 'lucide-react';
 import Card from '../components/Card';
 import StatsCard from '../components/StatsCard';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { getDashboardStats } from '../services/dashboardService';
+import { getCraStats } from '../services/craService';
 import { Link } from 'react-router-dom';
 
 const parseLocalDate = (dateStr) => {
@@ -43,6 +44,7 @@ const CircularProgress = ({ value, max, label, colorClass }) => {
 
 const EmployeeDashboard = () => {
   const [stats, setStats] = useState(null);
+  const [craStats, setCraStats] = useState({ total: 0, pending: 0, approved: 0, rejected: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -51,6 +53,12 @@ const EmployeeDashboard = () => {
         setLoading(true);
         const data = await getDashboardStats();
         setStats(data);
+        try {
+          const cra = await getCraStats();
+          setCraStats(cra);
+        } catch (e) {
+          console.error('Error fetching CRA stats:', e);
+        }
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
         toast.error('Failed to load dashboard');
@@ -73,9 +81,11 @@ const EmployeeDashboard = () => {
   if (!stats) return null;
 
   const info = stats.employeeInfo || {};
-  const maxVacation = 30; // standard vacation days
-  const remainingVacation = stats.remainingVacationDays ?? 30;
-  const usedVacation = maxVacation - remainingVacation;
+  const remainingVacation = stats.remainingVacationDays ?? 0;
+  const usedVacation = Math.max(0, 22 - remainingVacation);
+
+  const remainingSick = stats.remainingSickDays ?? 5;
+  const usedSick = Math.max(0, 5 - remainingSick);
 
   return (
     <div className="min-h-screen pb-12">
@@ -95,8 +105,9 @@ const EmployeeDashboard = () => {
       </div>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
-        <StatsCard title="Remaining Vacation" value={remainingVacation} icon={CalendarDays} colorClass="text-blue-600" bgClass="bg-blue-50" borderClass="border-t-blue-500" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-6 mb-8">
+        <StatsCard title="Paid Leave" value={`${remainingVacation} days`} icon={CalendarDays} colorClass="text-blue-600" bgClass="bg-blue-50" borderClass="border-t-blue-500" />
+        <StatsCard title="Sick Leave" value={`${remainingSick} days`} icon={CalendarDays} colorClass="text-rose-600" bgClass="bg-rose-50" borderClass="border-t-rose-500" />
         <StatsCard title="Pending Requests" value={stats.pendingRequests || 0} icon={Clock} colorClass="text-amber-500" bgClass="bg-amber-50" borderClass="border-t-amber-500" />
         <StatsCard title="Approved Absences" value={stats.approvedRequests || 0} icon={CheckCircle2} colorClass="text-emerald-600" bgClass="bg-emerald-50" borderClass="border-t-emerald-500" />
         <StatsCard title="Total Absences" value={stats.totalAbsences || 0} icon={CalendarOff} colorClass="text-violet-600" bgClass="bg-violet-50" borderClass="border-t-violet-500" />
@@ -111,6 +122,30 @@ const EmployeeDashboard = () => {
         />
       </div>
 
+      {/* CRA Quick Link Card */}
+      <div className="mb-8">
+        <Link to="/cra" className={`block bg-white rounded-2xl shadow-sm border p-5 hover:shadow-md transition-all group ${craStats.in_progress > 0 ? 'border-blue-500 bg-blue-50/20' : 'border-slate-200/60 hover:border-blue-200'}`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className={`p-3 rounded-2xl ${craStats.in_progress > 0 ? 'bg-blue-500 animate-pulse text-white' : 'bg-indigo-50 text-indigo-600'}`}>
+                <ClipboardList size={24} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-800">
+                  {craStats.in_progress > 0 ? '⚡ Activity Timer Running' : 'Activity Reports (CRA)'}
+                </h3>
+                <p className="text-sm text-slate-500 mt-0.5">
+                  {craStats.in_progress > 0 ? 'You have an active activity tracker running. Click to view.' : (
+                    `${craStats.completed || 0} completed · ${craStats.approved || 0} approved · ${craStats.total || 0} total`
+                  )}
+                </p>
+              </div>
+            </div>
+            <ChevronRight size={20} className={`text-slate-400 group-hover:text-blue-600 transition-colors ${craStats.in_progress > 0 ? 'text-blue-500' : ''}`} />
+          </div>
+        </Link>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Left Column: Balance */}
         <div className="lg:col-span-4 space-y-8">
@@ -118,11 +153,24 @@ const EmployeeDashboard = () => {
           <Card className="p-6 shadow-sm border-slate-200">
             <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2 pb-3 border-b border-slate-100">
               <CalendarDays className="text-emerald-600" size={20} />
-              Vacation Balance
+              Leave Balances
             </h3>
-            <div className="flex justify-around items-center pt-2">
-              <CircularProgress value={usedVacation} max={maxVacation} label="Used Days" colorClass="text-amber-500" />
-              <CircularProgress value={remainingVacation} max={maxVacation} label="Remaining" colorClass="text-emerald-500" />
+            <div className="space-y-6">
+              <div>
+                <h4 className="text-xs font-bold text-slate-600 mb-3 uppercase tracking-wider">Paid Leave (Congés payés)</h4>
+                <div className="flex justify-around items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                  <CircularProgress value={usedVacation} max={22} label="Used Days" colorClass="text-amber-500" />
+                  <CircularProgress value={remainingVacation} max={22} label="Remaining" colorClass="text-emerald-500" />
+                </div>
+              </div>
+              
+              <div>
+                <h4 className="text-xs font-bold text-slate-600 mb-3 uppercase tracking-wider">Sick Leave (Congés maladie)</h4>
+                <div className="flex justify-around items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                  <CircularProgress value={usedSick} max={5} label="Used Days" colorClass="text-rose-500" />
+                  <CircularProgress value={remainingSick} max={5} label="Remaining" colorClass="text-emerald-500" />
+                </div>
+              </div>
             </div>
           </Card>
         </div>

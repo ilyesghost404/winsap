@@ -802,8 +802,176 @@ const skipFaceIdSetup = async (req, res) => {
   }
 };
 
+const faceLogin = async (req, res) => {
+  const ipAddress = req.ip || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  const parser = new UAParser(req.headers["user-agent"]);
+  const browserName = parser.getBrowser().name || "Unknown Browser";
+  const deviceName = parser.getOS().name || "Unknown OS";
+
+  try {
+    const { image } = req.body;
+
+    if (!image) {
+      return res.status(400).json({ success: false, message: "Face image is required" });
+    }
+
+    // Call Local AI Service for liveness & embedding extraction
+    let aiResponse;
+    try {
+      aiResponse = await fetch("http://localhost:5001/api/ai/embed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image })
+      });
+    } catch (err) {
+      console.error("❌ AI Microservice connection failed:", err);
+      return res.status(502).json({ success: false, message: "AI Face Microservice is offline or unreachable." });
+    }
+
+    const aiResult = await aiResponse.json();
+    if (!aiResponse.ok || !aiResult.success) {
+      const reason = aiResult.reason || "Face verification failed";
+      return res.status(400).json({ success: false, message: reason, reason: aiResult.reason });
+    }
+
+    if (!aiResult.liveness) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Spoofing detected. Please use a live face.", 
+        reason: "LIVENESS_FAILED" 
+      });
+    }
+
+    const capturedEmbedding = aiResult.embedding;
+    if (!capturedEmbedding || !Array.isArray(capturedEmbedding)) {
+      return res.status(400).json({ success: false, message: "Failed to extract face embedding." });
+    }
+
+    // Fetch active face profiles to find a match
+    const db = require("../config/database");
+    const result = await db.query(`
+      SELECT fp.employee_id, fp.face_embedding, u.id AS user_id, u.username, u.email, u.role, u.is_active, u.account_status, u.face_id_enabled, CONCAT(e.first_name, ' ', e.last_name) AS employee_name
+      FROM face_profiles fp
+      JOIN employees e ON fp.employee_id = e.id
+      JOIN users u ON u.employee_id = e.id
+      WHERE fp.status = 'active' AND fp.face_enabled = true
+    `);
+    const profiles = result.rows;
+
+    let bestMatch = null;
+    let highestSimilarity = -1;
+    const threshold = parseFloat(process.env.FACE_SIMILARITY_THRESHOLD || "0.60");
+
+    // Cosine similarity helper
+    const computeCosineSimilarity = (emb1, emb2) => {
+      let dotProduct = 0.0;
+      let normA = 0.0;
+      let normB = 0.0;
+      for (let i = 0; i < emb1.length; i++) {
+        dotProduct += emb1[i] * emb2[i];
+        normA += emb1[i] * emb1[i];
+        normB += emb2[i] * emb2[i];
+      }
+      if (normA === 0 || normB === 0) return 0.0;
+      return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+    };
+
+    for (const profile of profiles) {
+      let storedEmbedding = profile.face_embedding;
+      if (typeof storedEmbedding === 'string') {
+        try { storedEmbedding = JSON.parse(storedEmbedding); } catch(e) {}
+      }
+      if (!storedEmbedding || !Array.isArray(storedEmbedding)) continue;
+
+      const similarity = computeCosineSimilarity(capturedEmbedding, storedEmbedding);
+      if (similarity >= threshold && similarity > highestSimilarity) {
+        highestSimilarity = similarity;
+        bestMatch = profile;
+      }
+    }
+
+    if (!bestMatch) {
+      return res.status(400).json({ success: false, message: "Face not recognized. Please try again.", reason: "FACE_NOT_MATCHED" });
+    }
+
+    // Verify employee/user status
+    if (!bestMatch.is_active) {
+      const FaceSecurityLog = require("../models/FaceSecurityLog");
+      await FaceSecurityLog.record(bestMatch.employee_id, 'VERIFY', 'FAILED', (highestSimilarity + 1) / 2 * 100);
+      return res.status(403).json({ success: false, message: "Account is disabled. Please contact your administrator." });
+    }
+
+    if (bestMatch.account_status === 'Pending' || bestMatch.account_status === 'Pending_Face') {
+      const FaceSecurityLog = require("../models/FaceSecurityLog");
+      await FaceSecurityLog.record(bestMatch.employee_id, 'VERIFY', 'FAILED', (highestSimilarity + 1) / 2 * 100);
+      return res.status(403).json({ success: false, message: "Account activation is incomplete. Please complete activation." });
+    }
+
+    const matchedUserId = bestMatch.user_id;
+
+    // Login successful
+    await User.resetFailedAttempts(matchedUserId);
+    await User.recordLoginHistory(matchedUserId, ipAddress, true, browserName, deviceName);
+    await User.recordActivity(matchedUserId, "login", matchedUserId, `User '${bestMatch.username}' logged in via Face ID`, ipAddress, browserName, deviceName);
+
+    // Record verification success in Face Security Logs
+    const FaceSecurityLog = require("../models/FaceSecurityLog");
+    const confidence = ((highestSimilarity + 1) / 2) * 100;
+    await FaceSecurityLog.record(bestMatch.employee_id, 'VERIFY', 'SUCCESS', confidence);
+
+    // Create JWT
+    const jti = crypto.randomUUID();
+    const token = jwt.sign(
+      {
+        id: matchedUserId,
+        username: bestMatch.username,
+        email: bestMatch.email,
+        role: bestMatch.role,
+        employee_id: bestMatch.employee_id,
+        jti
+      },
+      JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+
+    // Calculate exact expiry date for DB
+    const decoded = jwt.decode(token);
+    const expiresAt = new Date(decoded.exp * 1000);
+
+    await User.createSession(matchedUserId, jti, ipAddress, browserName, deviceName, expiresAt);
+
+    // Update last face verification time
+    await FaceProfile.recordVerification(bestMatch.employee_id);
+
+    // Send new login email asynchronously
+    emailService.sendNewLoginEmail(bestMatch.email, bestMatch.username, browserName, deviceName, ipAddress, new Date()).catch(console.error);
+
+    res.json({
+      success: true,
+      message: "Face Login successful",
+      data: {
+        token,
+        user: {
+          id: matchedUserId,
+          username: bestMatch.username,
+          email: bestMatch.email,
+          role: bestMatch.role,
+          employee_id: bestMatch.employee_id,
+          employee_name: bestMatch.employee_name,
+          face_id_enabled: bestMatch.face_id_enabled
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error("Face login error:", error);
+    res.status(500).json({ success: false, message: "An error occurred during Face ID login." });
+  }
+};
+
 module.exports = {
   login,
+  faceLogin,
   forgotPassword,
   resetPassword,
   changePassword,

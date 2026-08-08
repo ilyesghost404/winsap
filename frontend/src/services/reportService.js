@@ -95,3 +95,63 @@ export const getAttendanceMatrix = async (year, month) => {
 export const printReport = () => {
   window.print();
 };
+
+// Get employee yearly report data
+export const getEmployeeYearlyReport = async (employeeId, year) => {
+  const response = await api.get(`/reports/employees/${employeeId}/year/${year}`);
+  return response.data.data;
+};
+
+// Export employee yearly report to Excel (direct blob download)
+export const exportEmployeeYearlyExcel = async (employeeId, year) => {
+  const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+  const response = await fetch(
+    `${api.defaults.baseURL}/reports/employees/${employeeId}/year/${year}/excel`,
+    {
+      headers: {
+        Authorization: token ? `Bearer ${token}` : '',
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to export Excel report');
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Employee_Report_${employeeId}_${year}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+};
+
+// Export employee yearly report to PDF (direct blob download)
+export const exportEmployeeYearlyPdf = async (employeeId, year) => {
+  const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+  const response = await fetch(
+    `${api.defaults.baseURL}/reports/employees/${employeeId}/year/${year}/pdf`,
+    {
+      headers: {
+        Authorization: token ? `Bearer ${token}` : '',
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to export PDF report');
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Employee_Report_${employeeId}_${year}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+};

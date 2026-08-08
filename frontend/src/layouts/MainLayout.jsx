@@ -16,6 +16,7 @@ const getPageTitle = (pathname) => {
     '/settings': 'Settings',
     '/users': 'User Management',
     '/profile': 'Profile',
+    '/cra': 'CRA',
   };
   return titles[pathname] || 'Dashboard';
 };

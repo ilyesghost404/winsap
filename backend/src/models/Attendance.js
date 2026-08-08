@@ -347,6 +347,77 @@ class Attendance {
     );
     return result.rows[0];
   }
+
+  static async checkInWithFace(employeeId, confidence, deviceInfo) {
+    const existingResult = await db.query(
+      `SELECT * FROM attendance 
+       WHERE employee_id = $1 AND date = CURRENT_DATE`,
+      [employeeId]
+    );
+
+    if (existingResult.rows.length > 0) {
+      if (existingResult.rows[0].check_in) {
+        throw new Error('Employee already checked in today');
+      }
+      
+      const result = await db.query(
+        `UPDATE attendance 
+         SET check_in = CURRENT_TIME, 
+             status = 'Present',
+             face_verified = true,
+             qr_verified = false,
+             face_confidence = $2,
+             verification_method = 'AI_FACE',
+             qr_session_id = null,
+             device_information = $3,
+             verification_timestamp = CURRENT_TIMESTAMP
+         WHERE employee_id = $1 AND date = CURRENT_DATE
+         RETURNING *`,
+        [employeeId, confidence, deviceInfo]
+      );
+      return result.rows[0];
+    }
+
+    const result = await db.query(
+      `INSERT INTO attendance (employee_id, date, check_in, status, face_verified, qr_verified, face_confidence, verification_method, qr_session_id, device_information, verification_timestamp)
+       VALUES ($1, CURRENT_DATE, CURRENT_TIME, 'Present', true, false, $2, 'AI_FACE', null, $3, CURRENT_TIMESTAMP)
+       RETURNING *`,
+      [employeeId, confidence, deviceInfo]
+    );
+    return result.rows[0];
+  }
+
+  static async checkOutWithFace(employeeId, confidence, deviceInfo) {
+    const existingResult = await db.query(
+      `SELECT * FROM attendance 
+       WHERE employee_id = $1 AND date = CURRENT_DATE`,
+      [employeeId]
+    );
+
+    if (existingResult.rows.length === 0) {
+      throw new Error('No attendance record found for today');
+    }
+
+    if (existingResult.rows[0].check_out) {
+      throw new Error('Employee already checked out today');
+    }
+
+    const result = await db.query(
+      `UPDATE attendance 
+       SET check_out = CURRENT_TIME,
+           face_verified = true,
+           qr_verified = false,
+           face_confidence = $2,
+           verification_method = 'AI_FACE',
+           qr_session_id = null,
+           device_information = $3,
+           verification_timestamp = CURRENT_TIMESTAMP
+       WHERE employee_id = $1 AND date = CURRENT_DATE
+       RETURNING *`,
+      [employeeId, confidence, deviceInfo]
+    );
+    return result.rows[0];
+  }
 }
 
 module.exports = Attendance;

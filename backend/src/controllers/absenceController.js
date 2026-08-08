@@ -1,4 +1,5 @@
 const Absence = require("../models/Absence");
+const LeaveBalance = require("../models/LeaveBalance");
 const { getHolidays, countWorkingDays } = require("../services/attendanceService");
 
 /**
@@ -212,6 +213,13 @@ const deleteAbsence = async (req, res) => {
         if (!absence) {
             return res.status(404).json({ success: false, message: "Absence not found" });
         }
+
+        // Refund leave balance if a validated request is deleted
+        if (absence.status === 'Validated' && (absence.type === 'Vacation' || absence.type === 'Sick Leave')) {
+            const { chargeableDays } = await calculateAbsenceWorkingDays(absence.start_date, absence.end_date);
+            const typeKey = absence.type === 'Vacation' ? 'paid' : 'sick';
+            await LeaveBalance.refund(absence.employee_id, typeKey, chargeableDays, id);
+        }
         
         res.json({ success: true, data: absence });
     } catch (error) {
@@ -246,11 +254,32 @@ const validateAbsence = async (req, res) => {
             });
         }
 
+        // Validate and deduct leave balance for Vacation and Sick Leave
+        if (existing.type === "Vacation" || existing.type === "Sick Leave") {
+            const balance = await LeaveBalance.getByEmployeeId(existing.employee_id);
+            const typeKey = existing.type === "Vacation" ? "paid" : "sick";
+            const available = balance ? (typeKey === "paid" ? parseFloat(balance.paid_leave_balance) : parseFloat(balance.sick_leave_balance)) : 0;
+            
+            if (chargeableDays > available) {
+                return res.status(400).json({ 
+                    success: false, 
+                    message: "Insufficient leave balance", 
+                    reason: "INSUFFICIENT_BALANCE" 
+                });
+            }
+            
+            // Deduct balance
+            await LeaveBalance.deduct(existing.employee_id, typeKey, chargeableDays, id);
+        }
+
         const absence = await Absence.validate(id);
         
         res.json({ success: true, data: absence });
     } catch (error) {
         console.error("Error in validateAbsence:", error);
+        if (error.message === "Insufficient leave balance") {
+            return res.status(400).json({ success: false, message: error.message, reason: "INSUFFICIENT_BALANCE" });
+        }
         res.status(500).json({ success: false, message: "Failed to validate absence" });
     }
 };

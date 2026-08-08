@@ -104,6 +104,8 @@ const Holidays = () => {
   const [formData, setFormData] = useState({
     name: '',
     holiday_date: '',
+    startDate: '',
+    endDate: '',
     type: 'National',
     recurring: false,
     description: '',
@@ -157,9 +159,12 @@ const Holidays = () => {
 
   const handleAdd = (date = new Date()) => {
     setEditingHoliday(null);
+    const dateStr = formatDate(date);
     setFormData({
       name: '',
-      holiday_date: formatDate(date),
+      holiday_date: dateStr,
+      startDate: dateStr,
+      endDate: dateStr,
       type: 'National',
       recurring: false,
       description: '',
@@ -173,6 +178,8 @@ const Holidays = () => {
     setFormData({
       name: holiday.name,
       holiday_date: holiday.holiday_date,
+      startDate: holiday.holiday_date,
+      endDate: holiday.holiday_date,
       type: holiday.type || 'National',
       recurring: holiday.recurring || false,
       description: holiday.description || '',
@@ -207,7 +214,7 @@ const Holidays = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.name.trim() || !formData.holiday_date) {
+    if (!formData.name.trim()) {
       toast.error('Please fill in all required fields');
       return;
     }
@@ -215,11 +222,38 @@ const Holidays = () => {
     try {
       setIsSaving(true);
       if (editingHoliday) {
-        await updateHoliday(editingHoliday.id, formData);
+        if (!formData.holiday_date) {
+          toast.error('Please select a date');
+          return;
+        }
+        await updateHoliday(editingHoliday.id, {
+          name: formData.name,
+          holiday_date: formData.holiday_date,
+          type: formData.type,
+          recurring: formData.recurring,
+          description: formData.description,
+          color: formData.color
+        });
         toast.success('Holiday updated successfully');
       } else {
-        await createHoliday(formData);
-        toast.success('Holiday created successfully');
+        if (!formData.startDate || !formData.endDate) {
+          toast.error('Please select start and end dates');
+          return;
+        }
+        if (new Date(formData.startDate) > new Date(formData.endDate)) {
+          toast.error('Start date cannot be after end date.');
+          return;
+        }
+        const res = await createHoliday({
+          name: formData.name,
+          startDate: formData.startDate,
+          endDate: formData.endDate,
+          type: formData.type,
+          recurring: formData.recurring,
+          description: formData.description,
+          color: formData.color
+        });
+        toast.success(res.message || 'Holiday created successfully');
       }
       setIsModalOpen(false);
       fetchData();
@@ -581,31 +615,71 @@ const Holidays = () => {
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Date <span className="text-red-500">*</span></label>
-              <input
-                type="date"
-                required
-                value={formData.holiday_date}
-                onChange={(e) => setFormData({ ...formData, holiday_date: e.target.value })}
-                className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
+          {editingHoliday ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Date <span className="text-red-500">*</span></label>
+                <input
+                  type="date"
+                  required
+                  value={formData.holiday_date}
+                  onChange={(e) => setFormData({ ...formData, holiday_date: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Type</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                >
+                  <option value="National">National</option>
+                  <option value="Religious">Religious</option>
+                  <option value="Company">Company</option>
+                  <option value="Optional">Optional</option>
+                </select>
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1">Type</label>
-              <select
-                value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-              >
-                <option value="National">National</option>
-                <option value="Religious">Religious</option>
-                <option value="Company">Company</option>
-                <option value="Optional">Optional</option>
-              </select>
-            </div>
-          </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">Start Date <span className="text-red-500">*</span></label>
+                  <input
+                    type="date"
+                    required
+                    value={formData.startDate}
+                    onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
+                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 mb-1">End Date <span className="text-red-500">*</span></label>
+                  <input
+                    type="date"
+                    required
+                    value={formData.endDate}
+                    onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
+                    className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Type</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                >
+                  <option value="National">National</option>
+                  <option value="Religious">Religious</option>
+                  <option value="Company">Company</option>
+                  <option value="Optional">Optional</option>
+                </select>
+              </div>
+            </>
+          )}
 
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1">Description (Optional)</label>

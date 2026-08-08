@@ -15,6 +15,8 @@ const settingsRoutes = require("./routes/settingsRoutes");
 const authRoutes = require("./routes/authRoutes");
 const securityRoutes = require("./routes/securityRoutes");
 const departmentRoutes = require("./routes/departmentRoutes");
+const leaveBalanceRoutes = require("./routes/leaveBalanceRoutes");
+const craRoutes = require("./routes/craRoutes");
 
 const app = express();
 
@@ -186,6 +188,12 @@ app.use("/api/holidays", holidayRoutes);
 
 // Settings routes
 app.use("/api/settings", settingsRoutes);
+
+// Leave Balances routes
+app.use("/api/leave-balances", leaveBalanceRoutes);
+
+// CRA (Activity Reports) routes
+app.use("/api/cra", craRoutes);
 
 
 

@@ -61,4 +61,23 @@ const runAttendanceScheduler = () => {
   console.log('Attendance scheduler started (runs Mon-Fri at 17:30)');
 };
 
-module.exports = { runAttendanceScheduler };
+const runLeaveBalanceScheduler = () => {
+  const { accrueAllEmployees } = require("../controllers/leaveBalanceController");
+
+  // Schedule monthly leave accrual at 00:00 on the 1st day of every month
+  cron.schedule("0 0 1 * *", async () => {
+    console.log("⏰ [Cron] Triggering monthly leave accrual...");
+    await accrueAllEmployees();
+  });
+
+  // Also trigger accrual on startup to ensure current month is handled immediately
+  // (It internally skips employees who have already accrued for the current month)
+  setTimeout(async () => {
+    console.log("🚀 [Startup] Checking and running current month's leave accrual...");
+    await accrueAllEmployees();
+  }, 2000);
+
+  console.log("Leave balance accrual scheduler started (runs monthly on the 1st)");
+};
+
+module.exports = { runAttendanceScheduler, runLeaveBalanceScheduler };

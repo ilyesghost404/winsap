@@ -36,6 +36,10 @@ const getDashboardStats = async (req, res) => {
         });
       }
 
+      // Check and automatically check-in if there is an approved Telework request for today
+      const { checkAndTriggerAutomaticTeleworkCheckIn } = require("../services/attendanceService");
+      await checkAndTriggerAutomaticTeleworkCheckIn(employeeId);
+
       const employeeResult = await db.query("SELECT * FROM employees WHERE id = $1", [employeeId]);
       const employeeInfo = employeeResult.rows[0];
 
@@ -55,23 +59,25 @@ const getDashboardStats = async (req, res) => {
         LIMIT 5
       `, [employeeId]);
 
-      const usedVacationResult = await db.query(`
-        SELECT start_date, end_date
-        FROM absences 
-        WHERE employee_id = $1 
-        AND status = 'Validated' 
-        AND type = 'Vacation'
-        AND EXTRACT(YEAR FROM start_date) = $2
-      `, [employeeId, currentYear]);
+      const balanceResult = await db.query(
+        "SELECT paid_leave_balance, sick_leave_balance FROM leave_balances WHERE employee_id = $1",
+        [employeeId]
+      );
       
-      let usedVacationDays = 0;
-      for (const row of usedVacationResult.rows) {
-        const startStr = toDateString(row.start_date);
-        const endStr = toDateString(row.end_date);
-        const absHolidays = await getHolidays(startStr, endStr);
-        usedVacationDays += countWorkingDays(startStr, endStr, absHolidays);
+      let remainingVacationDays = 0.00;
+      let remainingSickDays = 5.00;
+      
+      if (balanceResult.rows.length > 0) {
+        remainingVacationDays = parseFloat(balanceResult.rows[0].paid_leave_balance);
+        remainingSickDays = parseFloat(balanceResult.rows[0].sick_leave_balance);
+      } else {
+        const LeaveBalance = require("../models/LeaveBalance");
+        const newBalance = await LeaveBalance.initialize(employeeId);
+        if (newBalance) {
+          remainingVacationDays = parseFloat(newBalance.paid_leave_balance);
+          remainingSickDays = parseFloat(newBalance.sick_leave_balance);
+        }
       }
-      const remainingVacationDays = Math.max(0, 30 - usedVacationDays);
 
       return res.json({
         success: true,
@@ -83,6 +89,7 @@ const getDashboardStats = async (req, res) => {
           approvedRequests,
           totalAbsences,
           remainingVacationDays,
+          remainingSickDays,
           recentAbsences: recentAbsencesResult.rows
         }
       });

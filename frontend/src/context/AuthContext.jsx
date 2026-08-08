@@ -85,6 +85,29 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const faceLogin = async (base64Image) => {
+    try {
+      const response = await api.post('/users/face-login', { image: base64Image });
+
+      if (response.data.success) {
+        const { token: receivedToken, user: receivedUser } = response.data.data;
+
+        setToken(receivedToken);
+        setUser(receivedUser);
+
+        // Face login uses rememberMe by default (saves to localStorage)
+        localStorage.setItem('token', receivedToken);
+        localStorage.setItem('user', JSON.stringify(receivedUser));
+
+        toast.success(`Welcome back, ${receivedUser.username}!`);
+        return receivedUser;
+      }
+    } catch (error) {
+      console.error('[AuthContext] Face Login Error:', error);
+      throw new Error(error.response?.data?.message || 'Face login failed. Please try again.');
+    }
+  };
+
   const logout = useCallback(() => {
     clearSession();
     toast.success('Logged out successfully.');
@@ -99,6 +122,7 @@ export const AuthProvider = ({ children }) => {
     isManager: user?.role === 'manager',
     isEmployee: user?.role === 'employee',
     login,
+    faceLogin,
     logout,
   };
 

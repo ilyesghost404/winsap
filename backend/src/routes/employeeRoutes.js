@@ -8,6 +8,7 @@ const {
     deleteEmployee,
     registerFace
 } = require("../controllers/employeeController");
+const { getEmployeeLeaveBalance } = require("../controllers/leaveBalanceController");
 const { requireAuth, authorizeRoles } = require("../middleware/authMiddleware");
 
 // Helper middleware to check if employee can view this profile
@@ -23,6 +24,7 @@ const canViewEmployee = (req, res, next) => {
 
 router.get("/", requireAuth, authorizeRoles("admin", "manager"), getEmployees);
 router.get("/:id", requireAuth, canViewEmployee, getEmployeeById);
+router.get("/:id/leave-balance", requireAuth, authorizeRoles("manager"), getEmployeeLeaveBalance);
 router.post("/", requireAuth, authorizeRoles("manager"), createEmployee);
 router.put("/:id", requireAuth, authorizeRoles("manager"), updateEmployee);
 router.delete("/:id", requireAuth, authorizeRoles("manager"), deleteEmployee);

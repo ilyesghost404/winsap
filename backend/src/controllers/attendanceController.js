@@ -243,6 +243,10 @@ const getEmployeeAttendanceByMonth = async (req, res) => {
       return res.status(403).json({ success: false, message: "Access forbidden: you can only view your own attendance history" });
     }
 
+    // Check and automatically check-in if there is an approved Telework request for today
+    const { checkAndTriggerAutomaticTeleworkCheckIn } = require("../services/attendanceService");
+    await checkAndTriggerAutomaticTeleworkCheckIn(parseInt(employeeId, 10));
+
     const records = await Attendance.getByEmployeeIdAndMonth(
       parseInt(employeeId, 10),
       parseInt(year, 10),
@@ -556,6 +560,183 @@ const checkOutWithAI = async (req, res) => {
   }
 };
 
+const checkInWithFaceOnly = async (req, res) => {
+  try {
+    const employeeId = req.body.employeeId || req.user.employee_id;
+    const { image, deviceInfo } = req.body;
+
+    if (!employeeId || !image) {
+      return res.status(400).json({ success: false, message: "Employee ID and image are required" });
+    }
+
+    // Security check: employee role can only check in for themselves
+    if (req.user.role === 'employee' && req.user.employee_id !== parseInt(employeeId, 10)) {
+      return res.status(403).json({ success: false, message: "Biometric profile mismatch. You can only check in for yourself." });
+    }
+
+    const profile = await FaceProfile.getByEmployeeId(employeeId);
+    if (!profile) {
+      return res.status(400).json({ success: false, message: "No face profile registered for this employee." });
+    }
+
+    let storedEmbedding = profile.face_embedding;
+    if (typeof storedEmbedding === 'string') {
+      try { storedEmbedding = JSON.parse(storedEmbedding); } catch(e) {}
+    }
+
+    if (!storedEmbedding || !Array.isArray(storedEmbedding) || storedEmbedding.length === 0) {
+      return res.status(400).json({ success: false, message: "Biometric profile is missing or invalid. Please re-register your Face ID." });
+    }
+
+    // Call Local AI Service
+    let aiResponse;
+    try {
+      aiResponse = await fetch("http://localhost:5001/api/ai/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image, embedding: storedEmbedding })
+      });
+    } catch (err) {
+      console.error("❌ AI Microservice connection failed:", err);
+      return res.status(502).json({ success: false, message: "AI Face Microservice is offline or unreachable." });
+    }
+
+    const aiResult = await aiResponse.json();
+    if (!aiResponse.ok || !aiResult.success) {
+      const reason = aiResult.reason || "Face verification failed";
+      await FaceSecurityLog.record(employeeId, 'VERIFY', 'FAILED', null);
+      return res.status(400).json({ success: false, message: reason, reason: aiResult.reason });
+    }
+
+    if (!aiResult.liveness) {
+      await FaceSecurityLog.record(employeeId, 'VERIFY', 'FAILED_LIVENESS', null);
+      return res.status(400).json({ success: false, message: "Liveness verification failed.", reason: "LIVENESS_FAILED" });
+    }
+
+    if (!aiResult.match) {
+      await FaceSecurityLog.record(employeeId, 'VERIFY', 'FAILED_MATCH', aiResult.confidence);
+      return res.status(400).json({ success: false, message: aiResult.message || "Face recognition failed.", reason: "FACE_NOT_MATCHED" });
+    }
+
+    await FaceSecurityLog.record(employeeId, 'VERIFY', 'SUCCESS', aiResult.confidence);
+    await FaceProfile.recordVerification(employeeId);
+
+    // Reject check-in on holidays or weekends (existing rules)
+    const today = new Date();
+    const todayStr = toDateString(today);
+    const dayOfWeek = today.getDay();
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+      return res.status(400).json({ success: false, message: "Cannot check in on a weekend." });
+    }
+    const holidays = await getHolidays(todayStr, todayStr);
+    if (holidays.length > 0) {
+      return res.status(400).json({ success: false, message: "Cannot check in on a public holiday." });
+    }
+
+    // Get device info
+    const uap = new UAParser(req.headers["user-agent"]);
+    const browser = uap.getBrowser().name || "Unknown Browser";
+    const os = uap.getOS().name || "Unknown OS";
+    const finalDeviceInfo = deviceInfo || `${browser} on ${os}`;
+
+    // Record check-in
+    const attendance = await Attendance.checkInWithFace(employeeId, aiResult.confidence, finalDeviceInfo);
+
+    res.json({ success: true, message: "Checked in successfully!", data: attendance });
+
+  } catch (error) {
+    console.error("Biometric check-in error:", error);
+    if (error.message === "Employee already checked in today") {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    res.status(500).json({ success: false, message: "An error occurred during Face ID check-in." });
+  }
+};
+
+const checkOutWithFaceOnly = async (req, res) => {
+  try {
+    const employeeId = req.body.employeeId || req.user.employee_id;
+    const { image, deviceInfo } = req.body;
+
+    if (!employeeId || !image) {
+      return res.status(400).json({ success: false, message: "Employee ID and image are required" });
+    }
+
+    // Security check: employee role can only check out for themselves
+    if (req.user.role === 'employee' && req.user.employee_id !== parseInt(employeeId, 10)) {
+      return res.status(403).json({ success: false, message: "Biometric profile mismatch. You can only check out for yourself." });
+    }
+
+    const profile = await FaceProfile.getByEmployeeId(employeeId);
+    if (!profile) {
+      return res.status(400).json({ success: false, message: "No face profile registered for this employee." });
+    }
+
+    let storedEmbedding = profile.face_embedding;
+    if (typeof storedEmbedding === 'string') {
+      try { storedEmbedding = JSON.parse(storedEmbedding); } catch(e) {}
+    }
+
+    if (!storedEmbedding || !Array.isArray(storedEmbedding) || storedEmbedding.length === 0) {
+      return res.status(400).json({ success: false, message: "Biometric profile is missing or invalid. Please re-register your Face ID." });
+    }
+
+    // Call Local AI Service
+    let aiResponse;
+    try {
+      aiResponse = await fetch("http://localhost:5001/api/ai/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image, embedding: storedEmbedding })
+      });
+    } catch (err) {
+      console.error("❌ AI Microservice connection failed:", err);
+      return res.status(502).json({ success: false, message: "AI Face Microservice is offline or unreachable." });
+    }
+
+    const aiResult = await aiResponse.json();
+    if (!aiResponse.ok || !aiResult.success) {
+      const reason = aiResult.reason || "Face verification failed";
+      await FaceSecurityLog.record(employeeId, 'VERIFY', 'FAILED', null);
+      return res.status(400).json({ success: false, message: reason, reason: aiResult.reason });
+    }
+
+    if (!aiResult.liveness) {
+      await FaceSecurityLog.record(employeeId, 'VERIFY', 'FAILED_LIVENESS', null);
+      return res.status(400).json({ success: false, message: "Liveness verification failed.", reason: "LIVENESS_FAILED" });
+    }
+
+    if (!aiResult.match) {
+      await FaceSecurityLog.record(employeeId, 'VERIFY', 'FAILED_MATCH', aiResult.confidence);
+      return res.status(400).json({ success: false, message: aiResult.message || "Face recognition failed.", reason: "FACE_NOT_MATCHED" });
+    }
+
+    await FaceSecurityLog.record(employeeId, 'VERIFY', 'SUCCESS', aiResult.confidence);
+    await FaceProfile.recordVerification(employeeId);
+
+    // Get device info
+    const uap = new UAParser(req.headers["user-agent"]);
+    const browser = uap.getBrowser().name || "Unknown Browser";
+    const os = uap.getOS().name || "Unknown OS";
+    const finalDeviceInfo = deviceInfo || `${browser} on ${os}`;
+
+    // Record check-out
+    const attendance = await Attendance.checkOutWithFace(employeeId, aiResult.confidence, finalDeviceInfo);
+
+    res.json({ success: true, message: "Checked out successfully!", data: attendance });
+
+  } catch (error) {
+    console.error("Biometric check-out error:", error);
+    if (
+      error.message === "No attendance record found for today" ||
+      error.message === "Employee already checked out today"
+    ) {
+      return res.status(400).json({ success: false, message: error.message });
+    }
+    res.status(500).json({ success: false, message: "An error occurred during Face ID check-out." });
+  }
+};
+
 module.exports = {
   getAttendance,
   getAttendanceById,
@@ -572,5 +753,7 @@ module.exports = {
   createQr,
   verifyQr,
   checkInWithAI,
-  checkOutWithAI
+  checkOutWithAI,
+  checkInWithFaceOnly,
+  checkOutWithFaceOnly
 };

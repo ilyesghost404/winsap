@@ -64,3 +64,13 @@ export const createQr = async () => {
   const response = await api.post('/presence/create-qr');
   return response.data; // { success, qrToken, expiresAt }
 };
+
+export const checkInWithFaceOnly = async (employeeId, image, deviceInfo) => {
+  const response = await api.post('/presence/check-in-face', { employeeId, image, deviceInfo });
+  return response.data;
+};
+
+export const checkOutWithFaceOnly = async (employeeId, image, deviceInfo) => {
+  const response = await api.post('/presence/check-out-face', { employeeId, image, deviceInfo });
+  return response.data;
+};

@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from '../context/AuthContext';
 import ProtectedRoute from './ProtectedRoute';
 import MainLayout from '../layouts/MainLayout';
 import Login from '../pages/Login';
+import FaceLogin from '../pages/FaceLogin';
 import ForgotPassword from '../pages/ForgotPassword';
 import VerifyResetCode from '../pages/VerifyResetCode';
 import ResetPassword from '../pages/ResetPassword';
@@ -23,6 +24,8 @@ import SecuritySettings from '../pages/SecuritySettings';
 import AdminSecurityCenter from '../pages/AdminSecurityCenter';
 import AttendanceVerification from '../pages/AttendanceVerification';
 import Departments from '../pages/Departments';
+import CRA from '../pages/CRA';
+import CRALiveMonitor from '../pages/CRALiveMonitor';
 
 const DashboardRouter = () => {
   const { user } = useAuth();
@@ -42,10 +45,11 @@ const RootRedirect = () => {
 const AppRoutes = () => {
   return (
       <AuthProvider>
-        <Routes>
-          {/* Public Routes */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
+         <Routes>
+           {/* Public Routes */}
+           <Route path="/login" element={<Login />} />
+           <Route path="/face-login" element={<FaceLogin />} />
+           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/verify-reset-code" element={<VerifyResetCode />} />
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
@@ -57,6 +61,11 @@ const AppRoutes = () => {
             <Route element={<ProtectedRoute allowedRoles={['admin', 'manager']} />}>
               <Route path="/attendance-verification" element={<AttendanceVerification />} />
               <Route path="/qr-portal" element={<AttendanceVerification />} />
+            </Route>
+
+            {/* Standalone Route for CRA Live Monitor */}
+            <Route element={<ProtectedRoute allowedRoles={['manager']} />}>
+              <Route path="/manager/cra-live-monitor" element={<CRALiveMonitor />} />
             </Route>
 
             <Route element={<MainLayout />}>
@@ -78,6 +87,7 @@ const AppRoutes = () => {
                 <Route path="/leave-requests" element={<LeaveRequests />} />
                 <Route path="/holidays" element={<Holidays />} />
                 <Route path="/attendance" element={<Attendance />} />
+                <Route path="/cra" element={<CRA />} />
               </Route>
 
               {/* Manager only routes */}

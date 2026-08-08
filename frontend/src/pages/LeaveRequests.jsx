@@ -10,6 +10,7 @@ import { getAbsences, createAbsence, updateAbsence, deleteAbsence, validateAbsen
 import { getEmployees } from '../services/employeeService';
 import { useAuth } from '../context/AuthContext';
 import EmployeeLeaveRequestsView from '../components/leave/EmployeeLeaveRequestsView';
+import { getEmployeeLeaveBalanceForManager } from '../services/leaveBalanceService';
 
 const LeaveRequests = () => {
   const { user } = useAuth();
@@ -38,6 +39,9 @@ const LeaveRequests = () => {
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
 
+  // Employee balances state (for managers)
+  const [employeeBalances, setEmployeeBalances] = useState({});
+
   const filteredAbsences = absences.filter(a => {
     const matchesStatus = statusFilter === 'All' || a.status === statusFilter;
     const matchesType = typeFilter === 'All' || a.type === typeFilter;
@@ -56,6 +60,21 @@ const LeaveRequests = () => {
       if (!isEmployee) {
         const employeesData = await getEmployees({ limit: 1000 });
         setEmployees(employeesData.data);
+
+        // Fetch leave balances for all unique employee IDs in the request list
+        const uniqueEmployeeIds = [...new Set(absencesData.data.map(a => a.employee_id))];
+        const balances = {};
+        await Promise.all(uniqueEmployeeIds.map(async (empId) => {
+          try {
+            const balanceRes = await getEmployeeLeaveBalanceForManager(empId);
+            if (balanceRes.success && balanceRes.data) {
+              balances[empId] = balanceRes.data;
+            }
+          } catch (err) {
+            console.error(`Failed to fetch balance for employee ${empId}:`, err);
+          }
+        }));
+        setEmployeeBalances(balances);
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -176,6 +195,7 @@ const LeaveRequests = () => {
     switch (type) {
       case 'Vacation': return { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' };
       case 'Sick Leave': return { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200' };
+      case 'Telework': return { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200' };
       case 'Training': return { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-200' };
       default: return { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-200' };
     }
@@ -293,6 +313,7 @@ const LeaveRequests = () => {
             <option value="All">All Types</option>
             <option value="Vacation">Vacation</option>
             <option value="Sick Leave">Sick Leave</option>
+            <option value="Telework">Telework</option>
             <option value="Training">Training</option>
             <option value="Other">Other</option>
           </select>
@@ -338,9 +359,27 @@ const LeaveRequests = () => {
                         </div>
                         <div className="min-w-0">
                           <p className="font-semibold text-slate-900 text-sm truncate">{row.employee_name}</p>
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold border ${typeConfig.bg} ${typeConfig.text} ${typeConfig.border}`}>
-                            {row.type}
-                          </span>
+                          <div className="flex flex-col gap-0.5 mt-0.5">
+                            <span className={`inline-flex items-center self-start px-2 py-0.5 rounded-md text-[10px] font-bold border ${typeConfig.bg} ${typeConfig.text} ${typeConfig.border}`}>
+                              {row.type}
+                            </span>
+                            {employeeBalances[row.employee_id] && (
+                              <div className="text-[10px] text-slate-400 font-semibold mt-1">
+                                <div>Paid Leave: <span className="text-slate-600">{employeeBalances[row.employee_id].paidLeave}d</span></div>
+                                <div>Sick Leave: <span className="text-slate-600">{employeeBalances[row.employee_id].sickLeave}d</span></div>
+                              </div>
+                            )}
+                            {(() => {
+                              const balanceKey = row.type === 'Vacation' ? 'paidLeave' : row.type === 'Sick Leave' ? 'sickLeave' : null;
+                              const available = balanceKey && employeeBalances[row.employee_id] ? employeeBalances[row.employee_id][balanceKey] : null;
+                              const isInsufficient = isPending && available !== null && days > available;
+                              return isInsufficient ? (
+                                <div className="mt-1 text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-100 rounded px-1.5 py-0.5 flex items-center gap-1 self-start animate-pulse">
+                                  <AlertCircle size={10} /> Insufficient Balance
+                                </div>
+                              ) : null;
+                            })()}
+                          </div>
                         </div>
                       </div>
 

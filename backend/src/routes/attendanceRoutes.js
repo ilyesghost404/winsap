@@ -16,7 +16,9 @@ const {
   createQr,
   verifyQr,
   checkInWithAI,
-  checkOutWithAI
+  checkOutWithAI,
+  checkInWithFaceOnly,
+  checkOutWithFaceOnly
 } = require("../controllers/attendanceController");
 const { requireAuth, authorizeRoles } = require("../middleware/authMiddleware");
 
@@ -61,6 +63,8 @@ router.post("/create-qr", requireAuth, authorizeRoles("manager"), createQr);
 router.post("/verify-qr", requireAuth, verifyQr);
 router.post("/check-in", requireAuth, checkInWithAI);
 router.post("/check-out", requireAuth, checkOutWithAI);
+router.post("/check-in-face", requireAuth, checkInWithFaceOnly);
+router.post("/check-out-face", requireAuth, checkOutWithFaceOnly);
 
 // Self-access or Manager/Admin endpoints
 router.post("/check-in/:employeeId", requireAuth, canAccessOrModifySelf, checkIn);

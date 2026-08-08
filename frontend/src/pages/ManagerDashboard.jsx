@@ -12,11 +12,15 @@ import {
   Sunrise,
   Activity,
   UserPlus,
-  TrendingUp
+  TrendingUp,
+  ClipboardList
 } from 'lucide-react';
 import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { getDashboardStats } from '../services/dashboardService';
+import { getCraStats, getAllActivities } from '../services/craService';
+import { connectSocket, disconnectSocket } from '../services/socket';
+import { Play } from 'lucide-react';
 
 import { useNavigate, Link } from 'react-router-dom';
 
@@ -28,8 +32,38 @@ const parseLocalDate = (dateStr) => {
   return new Date(year, month - 1, day);
 };
 
+const ActiveTaskRow = ({ task }) => {
+  const [elapsed, setElapsed] = useState('');
+
+  useEffect(() => {
+    const updateElapsed = () => {
+      const diffMs = Date.now() - new Date(task.startTime || task.start_time).getTime();
+      if (diffMs < 0) {
+        setElapsed('0m');
+        return;
+      }
+      const diffMins = Math.floor(diffMs / 60000);
+      const hrs = Math.floor(diffMins / 60);
+      const mins = diffMins % 60;
+      if (hrs === 0) {
+        setElapsed(`${mins} min${mins > 1 ? 's' : ''}`);
+      } else {
+        setElapsed(`${hrs}h ${mins}m`);
+      }
+    };
+
+    updateElapsed();
+    const timer = setInterval(updateElapsed, 30000);
+    return () => clearInterval(timer);
+  }, [task.startTime, task.start_time]);
+
+  return <span className="font-semibold text-slate-800 flex items-center gap-1.5"><Clock size={14} className="text-slate-400" />{elapsed}</span>;
+};
+
 const ManagerDashboard = () => {
   const [stats, setStats] = useState(null);
+  const [craStats, setCraStats] = useState({ total: 0, pending: 0, approved: 0, rejected: 0 });
+  const [activeTasks, setActiveTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -39,6 +73,12 @@ const ManagerDashboard = () => {
         setLoading(true);
         const data = await getDashboardStats();
         setStats(data);
+        try {
+          const cra = await getCraStats();
+          setCraStats(cra);
+        } catch (e) {
+          console.error('Error fetching CRA stats:', e);
+        }
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
         toast.error('Failed to load dashboard');
@@ -48,6 +88,76 @@ const ManagerDashboard = () => {
     };
 
     fetchData();
+
+    // Fetch initial active tasks
+    const fetchActive = async () => {
+      try {
+        const res = await getAllActivities({ status: 'IN_PROGRESS', limit: 100 });
+        if (res.success && res.data) {
+          setActiveTasks(res.data);
+        }
+      } catch (err) {
+        console.error('Error fetching active tasks:', err);
+      }
+    };
+    fetchActive();
+
+    // Socket.io listeners
+    const socket = connectSocket();
+    if (socket) {
+      socket.emit("join", "managers");
+
+      socket.on("cra_started", (task) => {
+        setActiveTasks(prev => {
+          if (prev.some(t => t.id === task.id)) return prev;
+          return [task, ...prev];
+        });
+        toast.success(`Activity started by ${task.employeeName}: ${task.ticketReference}`, { id: `start-${task.id}` });
+      });
+
+      socket.on("cra_auto_started", (task) => {
+        setActiveTasks(prev => {
+          if (prev.some(t => t.id === task.craId || t.id === task.id)) return prev;
+          return [{
+            id: task.craId || task.id,
+            employee_name: task.employeeName,
+            employeeName: task.employeeName,
+            ticket_reference: task.ticketReference,
+            ticketReference: task.ticketReference,
+            startTime: task.startTime,
+            start_time: task.startTime,
+            description: task.description || 'Auto-started queued task'
+          }, ...prev];
+        });
+        toast.success(`${task.employeeName} started ${task.ticketReference} automatically.`, { id: `auto-${task.craId || task.id}` });
+        getCraStats().then(setCraStats).catch(() => {});
+      });
+
+      socket.on("cra_approved", () => {
+        getCraStats().then(setCraStats).catch(() => {});
+      });
+
+      socket.on("cra_finished", (payload) => {
+        setActiveTasks(prev => prev.filter(t => (t.id !== payload.craId && t.id !== parseInt(payload.craId, 10))));
+        getCraStats().then(setCraStats).catch(() => {});
+      });
+
+      socket.on("cra_created", (payload) => {
+        toast.success(`CRA task assigned: ${payload.ticketReference}`, { id: `create-${payload.craId}`, duration: 5000 });
+        getCraStats().then(setCraStats).catch(() => {});
+      });
+    }
+
+    return () => {
+      if (socket) {
+        socket.off("cra_started");
+        socket.off("cra_auto_started");
+        socket.off("cra_approved");
+        socket.off("cra_finished");
+        socket.off("cra_created");
+      }
+      disconnectSocket();
+    };
   }, []);
 
   if (loading) {
@@ -243,6 +353,108 @@ const ManagerDashboard = () => {
             </div>
           );
         })}
+      </div>
+
+      {/* CRA Pending Approvals Card */}
+      {craStats.completed > 0 && (
+        <Link to="/cra" className="block mb-8 animate-slide-up stagger-2">
+          <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl p-5 text-white shadow-lg shadow-indigo-500/20 hover:shadow-xl hover:-translate-y-0.5 transition-all">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-white/20 rounded-xl">
+                  <ClipboardList size={24} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold">CRA Pending Approvals</h3>
+                  <p className="text-white/80 text-sm mt-0.5">
+                    {craStats.completed} activit{craStats.completed === 1 ? 'y' : 'ies'} completed & awaiting your validation
+                  </p>
+                </div>
+              </div>
+              <ArrowRight size={20} className="text-white/60" />
+            </div>
+          </div>
+        </Link>
+      )}
+
+      {/* Active Tasks Monitoring Section */}
+      <div className="bg-white rounded-3xl border border-slate-200/60 shadow-sm overflow-hidden mb-8 animate-slide-up stagger-3">
+        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-slate-50 to-white">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-50 text-blue-600 rounded-xl animate-pulse">
+              <Play size={18} className="fill-blue-600" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-800">Active Tasks / In Progress Activities</h2>
+              <p className="text-xs text-slate-400 font-medium">Real-time live monitoring of current employees' tasks</p>
+            </div>
+          </div>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold border border-emerald-200">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+            Live Connected
+          </span>
+        </div>
+
+        {activeTasks.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-center text-slate-500">
+            <ClipboardList className="text-slate-300 mb-3" size={32} />
+            <p className="text-sm font-medium">No active tasks currently running.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-slate-50/50 border-b border-slate-100 text-left">
+                  <th className="text-xs font-bold text-slate-500 uppercase tracking-wider px-6 py-4">Employee</th>
+                  <th className="text-xs font-bold text-slate-500 uppercase tracking-wider px-6 py-4">Task</th>
+                  <th className="text-xs font-bold text-slate-500 uppercase tracking-wider px-6 py-4">Started Time</th>
+                  <th className="text-xs font-bold text-slate-500 uppercase tracking-wider px-6 py-4">Current Duration</th>
+                  <th className="text-xs font-bold text-slate-500 uppercase tracking-wider px-6 py-4">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {activeTasks.map((task) => (
+                  <tr key={task.id} className="hover:bg-slate-50/30 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm">
+                          {(task.employeeName || task.employee_name || '??').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                        </div>
+                        <span className="text-sm font-semibold text-slate-800">
+                          {task.employeeName || task.employee_name}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="space-y-1">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-slate-100 text-slate-700 rounded-md text-[11px] font-mono font-bold">
+                          {task.ticketReference || task.ticket_reference}
+                        </span>
+                        <p className="text-sm text-slate-600 max-w-sm truncate" title={task.description || task.description}>
+                          {task.description || task.description}
+                        </p>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-sm text-slate-600 font-medium">
+                        {new Date(task.startTime || task.start_time).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <ActiveTaskRow task={task} />
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                        In Progress
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Two Column Layout */}

@@ -119,10 +119,70 @@ async function calculateAttendance(employeeId, startDate, endDate) {
     };
 }
 
+async function checkAndTriggerAutomaticTeleworkCheckIn(employeeId) {
+    if (!employeeId) return;
+
+    try {
+        const today = new Date();
+        const todayStr = toDateString(today);
+
+        // Check if there is an approved Telework request (in absences) for this employee for today
+        const absenceRes = await db.query(
+            `SELECT * FROM absences 
+             WHERE employee_id = $1 
+               AND type = 'Telework'
+               AND status = 'Validated'
+               AND start_date <= $2 
+               AND end_date >= $2
+             LIMIT 1`,
+            [employeeId, todayStr]
+        );
+
+        if (absenceRes.rows.length === 0) {
+            return;
+        }
+
+        // Prevent duplicate check-in record
+        const attendanceRes = await db.query(
+            `SELECT * FROM attendance 
+             WHERE employee_id = $1 AND date = $2`,
+            [employeeId, todayStr]
+        );
+
+        if (attendanceRes.rows.length > 0) {
+            return;
+        }
+
+        console.log(`🤖 [Automatic Telework Check-In] Automatically checking in employee ID ${employeeId} for today (${todayStr})...`);
+
+        // Format check-in time
+        const checkInTime = today.toTimeString().split(' ')[0];
+
+        await db.query(
+            `INSERT INTO attendance (
+                employee_id, 
+                date, 
+                check_in, 
+                status, 
+                validation_status, 
+                face_verified, 
+                qr_verified, 
+                verification_method, 
+                device_information
+            ) VALUES ($1, $2, $3, 'Present', 'Validated', true, true, 'Telework', 'Automatic check-in via approved Remote Work request')
+             ON CONFLICT (employee_id, date) DO NOTHING`,
+            [employeeId, todayStr, checkInTime]
+        );
+    } catch (err) {
+        console.error("Error in checkAndTriggerAutomaticTeleworkCheckIn:", err);
+    }
+}
+
 module.exports = {
     toDateString,
     countWorkingDays,
     getHolidays,
     getValidatedAbsenceDays,
-    calculateAttendance
+    calculateAttendance,
+    checkAndTriggerAutomaticTeleworkCheckIn
 };

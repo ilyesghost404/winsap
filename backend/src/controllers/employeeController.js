@@ -1,5 +1,6 @@
 const Employee = require("../models/Employee");
 const FaceProfile = require("../models/FaceProfile");
+const LeaveBalance = require("../models/LeaveBalance");
 
 const getEmployees = async (req, res) => {
     try {
@@ -44,6 +45,10 @@ const createEmployee = async (req, res) => {
         }
         
         const employee = await Employee.create(req.body);
+        
+        // Initialize leave balance for the new employee
+        await LeaveBalance.initialize(employee.id);
+        
         res.status(201).json({ success: true, data: employee });
     } catch (error) {
         console.error(error);
