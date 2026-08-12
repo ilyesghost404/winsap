@@ -90,19 +90,31 @@ const login = async (req, res) => {
     // Send new login email asynchronously (fire and forget)
     emailService.sendNewLoginEmail(user.email, user.username, browserName, deviceName, ipAddress, new Date()).catch(console.error);
 
+    const fullUser = await User.getById(user.id);
     res.json({
       success: true,
       message: "Login successful",
       data: {
         token,
         user: {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          role: user.role,
-          employee_id: user.employee_id,
-          employee_name: user.employee_name,
-          face_id_enabled: user.face_id_enabled
+          id: fullUser.id,
+          username: fullUser.username,
+          email: fullUser.email,
+          role: fullUser.role,
+          avatar_url: fullUser.avatar_url,
+          employee_id: fullUser.employee_id,
+          employee_name: fullUser.employee_name,
+          first_name: fullUser.first_name,
+          last_name: fullUser.last_name,
+          phone: fullUser.phone,
+          position: fullUser.position,
+          department: fullUser.department,
+          department_id: fullUser.department_id,
+          matricule: fullUser.matricule,
+          hire_date: fullUser.hire_date,
+          is_active: fullUser.is_active,
+          account_status: fullUser.account_status,
+          face_id_enabled: fullUser.face_id_enabled
         }
       }
     });
@@ -1041,19 +1053,31 @@ const faceLogin = async (req, res) => {
     // Send new login email asynchronously
     emailService.sendNewLoginEmail(bestMatch.email, bestMatch.username, browserName, deviceName, ipAddress, new Date()).catch(console.error);
 
+    const fullUser = await User.getById(matchedUserId);
     res.json({
       success: true,
       message: "Face Login successful",
       data: {
         token,
         user: {
-          id: matchedUserId,
-          username: bestMatch.username,
-          email: bestMatch.email,
-          role: bestMatch.role,
-          employee_id: bestMatch.employee_id,
-          employee_name: bestMatch.employee_name,
-          face_id_enabled: bestMatch.face_id_enabled
+          id: fullUser.id,
+          username: fullUser.username,
+          email: fullUser.email,
+          role: fullUser.role,
+          avatar_url: fullUser.avatar_url,
+          employee_id: fullUser.employee_id,
+          employee_name: fullUser.employee_name,
+          first_name: fullUser.first_name,
+          last_name: fullUser.last_name,
+          phone: fullUser.phone,
+          position: fullUser.position,
+          department: fullUser.department,
+          department_id: fullUser.department_id,
+          matricule: fullUser.matricule,
+          hire_date: fullUser.hire_date,
+          is_active: fullUser.is_active,
+          account_status: fullUser.account_status,
+          face_id_enabled: fullUser.face_id_enabled
         }
       }
     });

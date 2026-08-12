@@ -103,6 +103,12 @@ const Navbar = ({ title = 'Dashboard', onMenuClick }) => {
     .toUpperCase()
     .slice(0, 2);
 
+  const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [user?.avatar_url]);
+
   return (
     <header className="bg-white/95 backdrop-blur-md border-b border-[#dde5ec] sticky top-0 z-30 transition-all select-none shadow-premium-sm">
       <div className="px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between gap-4">
@@ -262,10 +268,11 @@ const Navbar = ({ title = 'Dashboard', onMenuClick }) => {
               onClick={() => setShowUserMenu(!showUserMenu)}
               className="flex items-center gap-2.5 p-1 sm:px-2.5 sm:py-1.5 rounded-xl hover:bg-[#e7f0fa] border border-transparent hover:border-[#dde5ec] transition-all cursor-pointer select-none"
             >
-              {user?.avatar_url ? (
+              {user?.avatar_url && !imgError ? (
                 <img
                   src={user.avatar_url}
                   alt={user?.username || 'Avatar'}
+                  onError={() => setImgError(true)}
                   className="w-8.5 h-8.5 rounded-xl object-cover shadow-electric-glow border border-white/30 flex-shrink-0"
                 />
               ) : (

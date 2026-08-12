@@ -114,7 +114,14 @@ class User {
   static async getByUsernameOrEmail(value) {
     // We need the password_hash for login verification, so we select *
     const result = await db.query(`
-      SELECT u.*, CONCAT(e.first_name, ' ', e.last_name) AS employee_name
+      SELECT 
+        u.*, 
+        COALESCE(u.avatar_url, e.avatar_url) AS avatar_url,
+        e.first_name,
+        e.last_name,
+        e.phone,
+        e.position,
+        CONCAT(e.first_name, ' ', e.last_name) AS employee_name
       FROM users u
       LEFT JOIN employees e ON u.employee_id = e.id
       WHERE u.username = $1 OR u.email = $1
