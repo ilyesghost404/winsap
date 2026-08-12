@@ -476,12 +476,25 @@ class User {
     const client = await db.connect();
     try {
       await client.query('BEGIN');
-      const userRes = await client.query('SELECT employee_id FROM users WHERE id = $1', [userId]);
-      const employeeId = userRes.rows[0]?.employee_id;
+      const userRes = await client.query('SELECT employee_id, username, email FROM users WHERE id = $1', [userId]);
+      let employeeId = userRes.rows[0]?.employee_id;
+
+      if (!employeeId) {
+        const userEmail = userRes.rows[0]?.email || `user${userId}@absenceflow.local`;
+        const fName = userRes.rows[0]?.username || 'User';
+        const matricule = `EMP-MGR-${userId}`;
+        const newEmpRes = await client.query(
+          `INSERT INTO employees (matricule, first_name, last_name, email, hire_date, avatar_url)
+           VALUES ($1, $2, $3, $4, CURRENT_DATE, $5)
+           RETURNING id`,
+          [matricule, fName, 'Account', userEmail, avatarUrl]
+        );
+        employeeId = newEmpRes.rows[0].id;
+      }
 
       await client.query(
-        'UPDATE users SET avatar_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-        [avatarUrl, userId]
+        'UPDATE users SET avatar_url = $1, employee_id = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
+        [avatarUrl, employeeId, userId]
       );
 
       if (employeeId) {
@@ -505,8 +518,8 @@ class User {
       await client.query('BEGIN');
       const { username, email, first_name, last_name, phone, position, department_id } = data;
 
-      const userRes = await client.query('SELECT employee_id FROM users WHERE id = $1', [userId]);
-      const employeeId = userRes.rows[0]?.employee_id;
+      const userRes = await client.query('SELECT employee_id, username, email FROM users WHERE id = $1', [userId]);
+      let employeeId = userRes.rows[0]?.employee_id;
 
       // Check username uniqueness if changed
       if (username) {
@@ -536,7 +549,24 @@ class User {
         );
       }
 
-      // Update employee table if linked
+      // Auto-create employees record if user (e.g. Manager) is not linked yet
+      if (!employeeId) {
+        const userEmail = email || userRes.rows[0]?.email || `user${userId}@absenceflow.local`;
+        const fName = first_name || userRes.rows[0]?.username || 'User';
+        const lName = last_name || 'Account';
+        const matricule = `EMP-MGR-${userId}`;
+
+        const newEmpRes = await client.query(
+          `INSERT INTO employees (matricule, first_name, last_name, email, phone, position, department_id, hire_date)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_DATE)
+           RETURNING id`,
+          [matricule, fName, lName, userEmail, phone || null, position || null, department_id || null]
+        );
+        employeeId = newEmpRes.rows[0].id;
+        await client.query('UPDATE users SET employee_id = $1 WHERE id = $2', [employeeId, userId]);
+      }
+
+      // Update employee table
       if (employeeId) {
         const empUpdates = [];
         const empParams = [];

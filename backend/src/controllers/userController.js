@@ -319,9 +319,19 @@ const getMe = async (req, res) => {
         username: user.username,
         email: user.email,
         role: user.role,
+        avatar_url: user.avatar_url,
         employee_id: user.employee_id,
         employee_name: user.employee_name,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        phone: user.phone,
+        position: user.position,
+        department: user.department,
+        department_id: user.department_id,
+        matricule: user.matricule,
+        hire_date: user.hire_date,
         is_active: user.is_active,
+        account_status: user.account_status,
         face_id_enabled: user.face_id_enabled
       }
     });
