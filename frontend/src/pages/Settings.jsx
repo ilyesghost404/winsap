@@ -58,18 +58,9 @@ const getPasswordStrength = (pw) => {
 
 const Settings = () => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState('profile');
+  const [activeTab, setActiveTab] = useState('notifications');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-
-  // Profile
-  const [profileForm, setProfileForm] = useState({
-    username: '',
-    email: '',
-    first_name: '',
-    last_name: '',
-    phone: '',
-  });
 
   // Notifications
   const [notifSettings, setNotifSettings] = useState({
@@ -89,23 +80,10 @@ const Settings = () => {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [profileRes, notifRes] = await Promise.allSettled([
-        getProfile(),
-        getNotifications(),
-      ]);
+      const notifRes = await getNotifications().catch(() => null);
 
-      if (profileRes.status === 'fulfilled' && profileRes.value) {
-        setProfileForm({
-          username: profileRes.value.username || '',
-          email: profileRes.value.email || '',
-          first_name: profileRes.value.first_name || '',
-          last_name: profileRes.value.last_name || '',
-          phone: profileRes.value.phone || '',
-        });
-      }
-
-      if (notifRes.status === 'fulfilled' && notifRes.value) {
-        setNotifSettings((prev) => ({ ...prev, ...notifRes.value }));
+      if (notifRes) {
+        setNotifSettings((prev) => ({ ...prev, ...notifRes }));
       }
     } catch (err) {
       console.error('Error loading settings:', err);
@@ -118,20 +96,6 @@ const Settings = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  const handleSaveProfile = async (e) => {
-    e.preventDefault();
-    try {
-      setSaving(true);
-      await updateProfile(profileForm);
-      toast.success('Account profile updated successfully');
-    } catch (err) {
-      console.error('Save profile error:', err);
-      toast.error(err.response?.data?.message || 'Failed to update profile');
-    } finally {
-      setSaving(false);
-    }
-  };
 
   const handleToggleNotif = async (key) => {
     const updated = { ...notifSettings, [key]: !notifSettings[key] };
@@ -175,7 +139,6 @@ const Settings = () => {
   const pwStrength = getPasswordStrength(pwForm.newPassword);
 
   const tabs = [
-    { id: 'profile', label: 'My Account', icon: User },
     { id: 'notifications', label: 'Email Notifications', icon: Bell },
     { id: 'security', label: 'Security & Password', icon: Lock },
   ];
@@ -236,70 +199,7 @@ const Settings = () => {
         })}
       </div>
 
-      {/* Tab 1: Profile Account */}
-      {activeTab === 'profile' && (
-        <Card headerVariant="light" title="Account Information" subtitle="Update login username, full name, and contact details">
-          <form onSubmit={handleSaveProfile} className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-heading font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">
-                  First Name
-                </label>
-                <input
-                  type="text"
-                  value={profileForm.first_name}
-                  onChange={(e) => setProfileForm({ ...profileForm, first_name: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-white border border-[#dde5ec] rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#2563eb]"
-                />
-              </div>
 
-              <div>
-                <label className="block text-xs font-heading font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Last Name
-                </label>
-                <input
-                  type="text"
-                  value={profileForm.last_name}
-                  onChange={(e) => setProfileForm({ ...profileForm, last_name: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-white border border-[#dde5ec] rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#2563eb]"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-heading font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Username
-                </label>
-                <input
-                  type="text"
-                  value={profileForm.username}
-                  onChange={(e) => setProfileForm({ ...profileForm, username: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-white border border-[#dde5ec] rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#2563eb]"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-heading font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  value={profileForm.email}
-                  onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-white border border-[#dde5ec] rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#2563eb]"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-3 border-t border-[#dde5ec]">
-              <Button type="submit" loading={saving}>
-                Save Changes
-              </Button>
-            </div>
-          </form>
-        </Card>
-      )}
 
       {/* Tab 2: Notifications */}
       {activeTab === 'notifications' && (
