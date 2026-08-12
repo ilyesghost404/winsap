@@ -1,6 +1,6 @@
 -- ============================================================
--- CONSOLIDATED DATABASE MIGRATIONS (01 to 17)
--- Generated: 2026-08-12T10:51:57.711Z
+-- CONSOLIDATED DATABASE MIGRATIONS (01 to 18)
+-- Generated: 2026-08-12T11:01:22.906Z
 -- ============================================================
 
 -- ============================================================
@@ -446,4 +446,13 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status VARCHAR(50) DEFAULT 'A
 ALTER TABLE users ADD COLUMN IF NOT EXISTS activation_token VARCHAR(255);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS activation_token_expiry TIMESTAMP;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS activated_at TIMESTAMP;
+
+-- ============================================================
+-- Migration: 18_user_profile_avatar.sql
+-- ============================================================
+
+-- Migration 18: Add profile picture / avatar_url support to users and employees
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500);
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500);
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 

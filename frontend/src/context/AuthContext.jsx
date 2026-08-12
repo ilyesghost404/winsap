@@ -113,6 +113,29 @@ export const AuthProvider = ({ children }) => {
     toast.success('Logged out successfully.');
   }, [clearSession]);
 
+  const updateUser = useCallback((updatedUserData) => {
+    setUser((prevUser) => {
+      const newUser = { ...prevUser, ...updatedUserData };
+      if (localStorage.getItem('token')) {
+        localStorage.setItem('user', JSON.stringify(newUser));
+      } else if (sessionStorage.getItem('token')) {
+        sessionStorage.setItem('user', JSON.stringify(newUser));
+      }
+      return newUser;
+    });
+  }, []);
+
+  const refreshUser = useCallback(async () => {
+    try {
+      const response = await api.get('/profile');
+      if (response.data.success) {
+        updateUser(response.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to refresh profile context:', err);
+    }
+  }, [updateUser]);
+
   const value = {
     user,
     token,
@@ -124,6 +147,9 @@ export const AuthProvider = ({ children }) => {
     login,
     faceLogin,
     logout,
+    setUser,
+    updateUser,
+    refreshUser
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

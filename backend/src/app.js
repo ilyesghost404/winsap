@@ -1,4 +1,5 @@
 const express = require("express");
+const path = require("path");
 const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
@@ -10,6 +11,7 @@ const attendanceRoutes = require("./routes/attendanceRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 const holidayRoutes = require("./routes/holidayRoutes");
 const userRoutes = require("./routes/userRoutes");
+const profileRoutes = require("./routes/profileRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const settingsRoutes = require("./routes/settingsRoutes");
 const authRoutes = require("./routes/authRoutes");
@@ -191,6 +193,13 @@ app.use("/api/settings", settingsRoutes);
 
 // Leave Balances routes
 app.use("/api/leave-balances", leaveBalanceRoutes);
+
+// Serve uploaded files (e.g. profile pictures)
+app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+
+// Profile routes
+app.use("/api/profile", profileRoutes);
+app.use("/api/users/profile", profileRoutes);
 
 // CRA (Activity Reports) routes
 app.use("/api/cra", craRoutes);

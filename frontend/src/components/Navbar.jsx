@@ -262,9 +262,17 @@ const Navbar = ({ title = 'Dashboard', onMenuClick }) => {
               onClick={() => setShowUserMenu(!showUserMenu)}
               className="flex items-center gap-2.5 p-1 sm:px-2.5 sm:py-1.5 rounded-xl hover:bg-[#e7f0fa] border border-transparent hover:border-[#dde5ec] transition-all cursor-pointer select-none"
             >
-              <div className="w-8.5 h-8.5 rounded-xl bg-[#1c2b33] text-white font-black text-xs flex items-center justify-center shadow-electric-glow border border-white/30 flex-shrink-0">
-                {initials}
-              </div>
+              {user?.avatar_url ? (
+                <img
+                  src={user.avatar_url}
+                  alt={user?.username || 'Avatar'}
+                  className="w-8.5 h-8.5 rounded-xl object-cover shadow-electric-glow border border-white/30 flex-shrink-0"
+                />
+              ) : (
+                <div className="w-8.5 h-8.5 rounded-xl bg-[#1c2b33] text-white font-black text-xs flex items-center justify-center shadow-electric-glow border border-white/30 flex-shrink-0">
+                  {initials}
+                </div>
+              )}
               <div className="hidden sm:block text-left">
                 <p className="text-xs font-bold text-[#1c2b33] leading-tight max-w-[120px] truncate">
                   {user?.employee_name || user?.username || 'Authorized User'}

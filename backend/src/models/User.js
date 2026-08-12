@@ -84,14 +84,24 @@ class User {
         u.email, 
         u.role, 
         u.employee_id, 
+        COALESCE(u.avatar_url, e.avatar_url) AS avatar_url,
         u.is_active, 
         u.account_status,
         u.created_at, 
         u.updated_at,
         u.face_id_enabled,
+        e.first_name,
+        e.last_name,
+        e.phone,
+        e.position,
+        e.department_id,
+        e.matricule,
+        e.hire_date,
+        d.name AS department,
         CONCAT(e.first_name, ' ', e.last_name) AS employee_name
       FROM users u
       LEFT JOIN employees e ON u.employee_id = e.id
+      LEFT JOIN departments d ON e.department_id = d.id
       WHERE u.id = $1
     `, [id]);
     return result.rows[0];
@@ -460,6 +470,120 @@ class User {
           updated_at = CURRENT_TIMESTAMP
       WHERE id = $2
     `, [enabled, userId]);
+  }
+
+  static async updateAvatar(userId, avatarUrl) {
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      const userRes = await client.query('SELECT employee_id FROM users WHERE id = $1', [userId]);
+      const employeeId = userRes.rows[0]?.employee_id;
+
+      await client.query(
+        'UPDATE users SET avatar_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+        [avatarUrl, userId]
+      );
+
+      if (employeeId) {
+        await client.query(
+          'UPDATE employees SET avatar_url = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+          [avatarUrl, employeeId]
+        );
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  static async updateProfile(userId, data) {
+    const client = await db.connect();
+    try {
+      await client.query('BEGIN');
+      const { username, email, first_name, last_name, phone, position, department_id } = data;
+
+      const userRes = await client.query('SELECT employee_id FROM users WHERE id = $1', [userId]);
+      const employeeId = userRes.rows[0]?.employee_id;
+
+      // Check username uniqueness if changed
+      if (username) {
+        const dupCheck = await client.query('SELECT id FROM users WHERE username = $1 AND id != $2', [username, userId]);
+        if (dupCheck.rows.length > 0) {
+          const error = new Error('Username is already taken by another user.');
+          error.statusCode = 400;
+          throw error;
+        }
+        await client.query(
+          'UPDATE users SET username = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+          [username, userId]
+        );
+      }
+
+      // Check email uniqueness if changed
+      if (email) {
+        const dupEmailCheck = await client.query('SELECT id FROM users WHERE email = $1 AND id != $2', [email, userId]);
+        if (dupEmailCheck.rows.length > 0) {
+          const error = new Error('Email address is already in use by another account.');
+          error.statusCode = 400;
+          throw error;
+        }
+        await client.query(
+          'UPDATE users SET email = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+          [email, userId]
+        );
+      }
+
+      // Update employee table if linked
+      if (employeeId) {
+        const empUpdates = [];
+        const empParams = [];
+        let pIdx = 1;
+
+        if (first_name !== undefined) {
+          empUpdates.push(`first_name = $${pIdx++}`);
+          empParams.push(first_name);
+        }
+        if (last_name !== undefined) {
+          empUpdates.push(`last_name = $${pIdx++}`);
+          empParams.push(last_name);
+        }
+        if (email !== undefined) {
+          empUpdates.push(`email = $${pIdx++}`);
+          empParams.push(email);
+        }
+        if (phone !== undefined) {
+          empUpdates.push(`phone = $${pIdx++}`);
+          empParams.push(phone);
+        }
+        if (position !== undefined) {
+          empUpdates.push(`position = $${pIdx++}`);
+          empParams.push(position);
+        }
+        if (department_id !== undefined) {
+          empUpdates.push(`department_id = $${pIdx++}`);
+          empParams.push(department_id);
+        }
+
+        if (empUpdates.length > 0) {
+          empUpdates.push(`updated_at = CURRENT_TIMESTAMP`);
+          empParams.push(employeeId);
+          await client.query(
+            `UPDATE employees SET ${empUpdates.join(', ')} WHERE id = $${pIdx}`,
+            empParams
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 }
 
