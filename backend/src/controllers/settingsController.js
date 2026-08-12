@@ -70,21 +70,23 @@ const getNotifications = async (req, res) => {
     let result = await db.query(`SELECT * FROM user_settings WHERE user_id = $1`, [userId]);
     if (result.rows.length === 0) {
       result = await db.query(
-        `INSERT INTO user_settings (user_id) VALUES ($1) RETURNING *`,
+        `INSERT INTO user_settings (user_id, approval_notifications, absence_notifications, holiday_notifications, report_notifications) VALUES ($1, true, true, true, false) RETURNING *`,
         [userId]
       );
     }
 
     const s = result.rows[0];
-    res.json({
-      success: true,
-      data: {
-        absence_notifications: s.absence_notifications,
-        approval_notifications: s.approval_notifications,
-        holiday_notifications: s.holiday_notifications,
-        report_notifications: s.report_notifications,
-      }
-    });
+    const data = {
+      email_leave_approval: s.approval_notifications ?? true,
+      email_leave_rejected: s.absence_notifications ?? true,
+      email_holiday_reminders: s.holiday_notifications ?? true,
+      email_attendance_alerts: s.report_notifications ?? false,
+      approval_notifications: s.approval_notifications ?? true,
+      absence_notifications: s.absence_notifications ?? true,
+      holiday_notifications: s.holiday_notifications ?? true,
+      report_notifications: s.report_notifications ?? false,
+    };
+    res.json({ success: true, data });
   } catch (error) {
     console.error("getNotifications error:", error);
     res.status(500).json({ success: false, message: "Failed to load notification settings" });
@@ -95,26 +97,47 @@ const updateNotifications = async (req, res) => {
   try {
     const userId = req.user.id;
     const {
+      email_leave_approval,
+      email_leave_rejected,
+      email_holiday_reminders,
+      email_attendance_alerts,
       absence_notifications,
       approval_notifications,
       holiday_notifications,
       report_notifications,
     } = req.body;
 
+    const approvalVal = approval_notifications !== undefined ? approval_notifications : (email_leave_approval !== undefined ? email_leave_approval : true);
+    const absenceVal = absence_notifications !== undefined ? absence_notifications : (email_leave_rejected !== undefined ? email_leave_rejected : true);
+    const holidayVal = holiday_notifications !== undefined ? holiday_notifications : (email_holiday_reminders !== undefined ? email_holiday_reminders : true);
+    const reportVal = report_notifications !== undefined ? report_notifications : (email_attendance_alerts !== undefined ? email_attendance_alerts : false);
+
     // Upsert
     const result = await db.query(`
-      INSERT INTO user_settings (user_id, absence_notifications, approval_notifications, holiday_notifications, report_notifications, updated_at)
+      INSERT INTO user_settings (user_id, approval_notifications, absence_notifications, holiday_notifications, report_notifications, updated_at)
       VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
       ON CONFLICT (user_id) DO UPDATE SET
-        absence_notifications = EXCLUDED.absence_notifications,
         approval_notifications = EXCLUDED.approval_notifications,
+        absence_notifications = EXCLUDED.absence_notifications,
         holiday_notifications = EXCLUDED.holiday_notifications,
         report_notifications = EXCLUDED.report_notifications,
         updated_at = CURRENT_TIMESTAMP
       RETURNING *
-    `, [userId, absence_notifications, approval_notifications, holiday_notifications, report_notifications]);
+    `, [userId, approvalVal, absenceVal, holidayVal, reportVal]);
 
-    res.json({ success: true, data: result.rows[0] });
+    const s = result.rows[0];
+    const data = {
+      email_leave_approval: s.approval_notifications,
+      email_leave_rejected: s.absence_notifications,
+      email_holiday_reminders: s.holiday_notifications,
+      email_attendance_alerts: s.report_notifications,
+      approval_notifications: s.approval_notifications,
+      absence_notifications: s.absence_notifications,
+      holiday_notifications: s.holiday_notifications,
+      report_notifications: s.report_notifications,
+    };
+
+    res.json({ success: true, data });
   } catch (error) {
     console.error("updateNotifications error:", error);
     res.status(500).json({ success: false, message: "Failed to update notification settings" });

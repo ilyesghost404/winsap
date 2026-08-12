@@ -2,7 +2,7 @@ const http = require("http");
 const app = require("./app");
 const pool = require("./config/database");
 const { checkDatabaseConnection } = require("./config/database");
-const { runAttendanceScheduler, runLeaveBalanceScheduler } = require("./services/attendanceScheduler");
+const { runAttendanceScheduler, runLeaveBalanceScheduler, runHolidayReminderScheduler } = require("./services/attendanceScheduler");
 const { startYearlyReportScheduler } = require("./services/employeeReportService");
 const socketUtil = require("./utils/socket");
 
@@ -86,6 +86,7 @@ server.listen(PORT, async () => {
   if (dbConnected) {
     runAttendanceScheduler();
     runLeaveBalanceScheduler();
+    runHolidayReminderScheduler();
     startYearlyReportScheduler();
   } else {
     console.warn("⚠️  Server is running but database is unreachable. Some features will not work.");

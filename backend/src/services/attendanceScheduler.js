@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const db = require('../config/database');
+const emailService = require('../utils/emailService');
 
 const runAttendanceScheduler = () => {
   // Run every working day at 17:30
@@ -52,6 +53,26 @@ const runAttendanceScheduler = () => {
         }
       }
 
+      // Step 4: Send Daily Attendance Digest to users with report_notifications enabled
+      try {
+        const usersToNotify = await db.query(`
+          SELECT u.id, u.email, u.username, us.report_notifications, us.email_notifications
+          FROM users u
+          JOIN user_settings us ON us.user_id = u.id
+          WHERE us.report_notifications = true AND u.email IS NOT NULL
+        `);
+        const todayStr = new Date().toISOString().split('T')[0];
+        const presentCount = attendedEmployeeIds.size;
+        for (const u of usersToNotify.rows) {
+          emailService.sendAttendanceDigestEmail(u.email, u.username, todayStr, {
+            status: 'Daily Check-in Completed',
+            presentCount: presentCount
+          }).catch(err => console.warn('⚠️ Attendance digest email warning:', err.message));
+        }
+      } catch (digestErr) {
+        console.warn('⚠️ Error sending daily attendance digest:', digestErr.message);
+      }
+
       console.log('Automatic attendance check completed');
     } catch (error) {
       console.error('Error running attendance scheduler:', error);
@@ -80,4 +101,36 @@ const runLeaveBalanceScheduler = () => {
   console.log("Leave balance accrual scheduler started (runs monthly on the 1st)");
 };
 
-module.exports = { runAttendanceScheduler, runLeaveBalanceScheduler };
+const runHolidayReminderScheduler = () => {
+  cron.schedule('0 9 * * *', async () => {
+    try {
+      const upcomingHolidays = await db.query(
+        `SELECT name, date FROM holidays WHERE date = CURRENT_DATE + INTERVAL '1 day' OR date = CURRENT_DATE + INTERVAL '2 days'`
+      );
+      if (upcomingHolidays.rows.length === 0) return;
+
+      const usersToNotify = await db.query(`
+        SELECT u.id, u.email, u.username, us.holiday_notifications, us.email_notifications
+        FROM users u
+        LEFT JOIN user_settings us ON us.user_id = u.id
+        WHERE (us.holiday_notifications IS NULL OR us.holiday_notifications = true)
+          AND u.email IS NOT NULL
+      `);
+
+      for (const h of upcomingHolidays.rows) {
+        const hDateStr = new Date(h.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        for (const u of usersToNotify.rows) {
+          emailService.sendHolidayReminderEmail(u.email, u.username, h.name, hDateStr)
+            .catch(err => console.warn('⚠️ Holiday reminder email warning:', err.message));
+        }
+      }
+    } catch (err) {
+      console.warn('⚠️ Error running holiday reminder scheduler:', err.message);
+    }
+  });
+
+  console.log('Holiday reminder scheduler registered (runs daily at 09:00)');
+};
+
+module.exports = { runAttendanceScheduler, runLeaveBalanceScheduler, runHolidayReminderScheduler };
+

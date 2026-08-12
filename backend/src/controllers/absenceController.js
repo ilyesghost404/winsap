@@ -1,6 +1,8 @@
 const Absence = require("../models/Absence");
 const LeaveBalance = require("../models/LeaveBalance");
 const { getHolidays, countWorkingDays } = require("../services/attendanceService");
+const db = require("../config/database");
+const emailService = require("../utils/emailService");
 
 /**
  * Calculate the number of chargeable days for an absence period,
@@ -311,6 +313,33 @@ const validateAbsence = async (req, res) => {
 
         const absence = await Absence.validate(id);
         
+        // Dispatch leave approval email if enabled in recipient's user_settings
+        try {
+            const empUserRes = await db.query(
+                `SELECT u.id, u.email, u.username, us.approval_notifications, us.email_notifications
+                 FROM users u
+                 LEFT JOIN user_settings us ON us.user_id = u.id
+                 WHERE u.employee_id = $1 OR u.email = (SELECT email FROM employees WHERE id = $1)`,
+                [existing.employee_id]
+            );
+            if (empUserRes.rows.length > 0) {
+                const empUser = empUserRes.rows[0];
+                const isEnabled = empUser.approval_notifications !== false && empUser.email_notifications !== false;
+                if (isEnabled && empUser.email) {
+                    emailService.sendLeaveApprovalEmail(
+                        empUser.email,
+                        empUser.username,
+                        existing.type,
+                        existing.start_date,
+                        existing.end_date,
+                        chargeableDays
+                    ).catch(err => console.warn('⚠️ Leave approval email send warning:', err.message));
+                }
+            }
+        } catch (emailErr) {
+            console.warn('⚠️ Could not process leave approval email check:', emailErr.message);
+        }
+
         res.json({ success: true, data: absence });
     } catch (error) {
         console.error("Error in validateAbsence:", error);
@@ -340,6 +369,32 @@ const rejectAbsence = async (req, res) => {
 
         const absence = await Absence.reject(id);
         
+        // Dispatch leave rejection email if enabled in recipient's user_settings
+        try {
+            const empUserRes = await db.query(
+                `SELECT u.id, u.email, u.username, us.absence_notifications, us.email_notifications
+                 FROM users u
+                 LEFT JOIN user_settings us ON us.user_id = u.id
+                 WHERE u.employee_id = $1 OR u.email = (SELECT email FROM employees WHERE id = $1)`,
+                [existing.employee_id]
+            );
+            if (empUserRes.rows.length > 0) {
+                const empUser = empUserRes.rows[0];
+                const isEnabled = empUser.absence_notifications !== false && empUser.email_notifications !== false;
+                if (isEnabled && empUser.email) {
+                    emailService.sendLeaveRejectionEmail(
+                        empUser.email,
+                        empUser.username,
+                        existing.type,
+                        existing.start_date,
+                        existing.end_date
+                    ).catch(err => console.warn('⚠️ Leave rejection email send warning:', err.message));
+                }
+            }
+        } catch (emailErr) {
+            console.warn('⚠️ Could not process leave rejection email check:', emailErr.message);
+        }
+
         res.json({ success: true, data: absence });
     } catch (error) {
         console.error("Error in rejectAbsence:", error);

@@ -234,6 +234,105 @@ const sendOtpEmail = async (userEmail, username, otpCode, expiryMinutes = 10) =>
   return sendEmail(userEmail, "WinSAP Password Reset Code", html);
 };
 
+const sendLeaveApprovalEmail = async (userEmail, username, leaveType, startDate, endDate, daysCount) => {
+  const html = `
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc; padding: 40px 0; margin: 0; color: #334155;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+        <div style="background: linear-gradient(135deg, #059669 0%, #10b981 100%); padding: 32px 24px; text-align: center;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700;">WinSAP</h1>
+          <p style="color: #e6fffa; margin: 8px 0 0 0; font-size: 14px; font-weight: 600;">Leave Request Approved</p>
+        </div>
+        <div style="padding: 32px;">
+          <h2 style="color: #065f46; margin-top: 0; font-size: 20px;">Great news, ${username}!</h2>
+          <p style="font-size: 15px; line-height: 22px; color: #475569;">
+            Your request for <strong>${leaveType}</strong> has been officially approved by management.
+          </p>
+          <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 20px; margin: 24px 0;">
+            <p style="margin: 4px 0; font-size: 14px; color: #166534;"><strong>Type:</strong> ${leaveType}</p>
+            <p style="margin: 4px 0; font-size: 14px; color: #166534;"><strong>Start Date:</strong> ${startDate}</p>
+            <p style="margin: 4px 0; font-size: 14px; color: #166534;"><strong>End Date:</strong> ${endDate}</p>
+            <p style="margin: 4px 0; font-size: 14px; color: #166534;"><strong>Chargeable Working Days:</strong> ${daysCount} day(s)</p>
+          </div>
+          <p style="font-size: 13px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px;">
+            This is an automated notification based on your notification settings in WinSAP.
+          </p>
+        </div>
+      </div>
+    </div>
+  `;
+  return sendEmail(userEmail, `Leave Request Approved: ${leaveType}`, html);
+};
+
+const sendLeaveRejectionEmail = async (userEmail, username, leaveType, startDate, endDate, reason = '') => {
+  const html = `
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc; padding: 40px 0; margin: 0; color: #334155;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+        <div style="background: linear-gradient(135deg, #dc2626 0%, #f43f5e 100%); padding: 32px 24px; text-align: center;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700;">WinSAP</h1>
+          <p style="color: #ffe4e6; margin: 8px 0 0 0; font-size: 14px; font-weight: 600;">Leave Request Status Update</p>
+        </div>
+        <div style="padding: 32px;">
+          <h2 style="color: #991b1b; margin-top: 0; font-size: 20px;">Hello ${username},</h2>
+          <p style="font-size: 15px; line-height: 22px; color: #475569;">
+            Your request for <strong>${leaveType}</strong> (${startDate} to ${endDate}) was not approved by management at this time.
+          </p>
+          ${reason ? `<div style="background-color: #fff1f2; border: 1px solid #fecdd3; border-radius: 10px; padding: 16px; margin: 20px 0; color: #9f1239; font-size: 14px;"><strong>Reason:</strong> ${reason}</div>` : ''}
+          <p style="font-size: 13px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 16px;">
+            If you have questions, please reach out to your manager or HR team.
+          </p>
+        </div>
+      </div>
+    </div>
+  `;
+  return sendEmail(userEmail, `Leave Request Status Update: ${leaveType}`, html);
+};
+
+const sendHolidayReminderEmail = async (userEmail, username, holidayName, holidayDate) => {
+  const html = `
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc; padding: 40px 0; margin: 0; color: #334155;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+        <div style="background: linear-gradient(135deg, #0284c7 0%, #38bdf8 100%); padding: 32px 24px; text-align: center;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700;">WinSAP</h1>
+          <p style="color: #e0f2fe; margin: 8px 0 0 0; font-size: 14px; font-weight: 600;">Upcoming Holiday Reminder</p>
+        </div>
+        <div style="padding: 32px;">
+          <h2 style="color: #075985; margin-top: 0; font-size: 20px;">Hello ${username},</h2>
+          <p style="font-size: 15px; line-height: 22px; color: #475569;">
+            This is a friendly reminder that an official non-working company holiday is coming up:
+          </p>
+          <div style="background-color: #f0f9ff; border: 1px solid #bae6fd; border-radius: 10px; padding: 20px; margin: 24px 0; text-align: center;">
+            <p style="margin: 0; font-size: 20px; font-weight: 800; color: #0369a1;">${holidayName}</p>
+            <p style="margin: 8px 0 0 0; font-size: 14px; font-weight: 600; color: #0284c7;">📅 ${holidayDate}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  return sendEmail(userEmail, `Upcoming Holiday Reminder: ${holidayName}`, html);
+};
+
+const sendAttendanceDigestEmail = async (userEmail, username, date, stats = {}) => {
+  const html = `
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f8fafc; padding: 40px 0; margin: 0; color: #334155;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+        <div style="background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%); padding: 32px 24px; text-align: center;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 28px; font-weight: 700;">WinSAP</h1>
+          <p style="color: #e0e7ff; margin: 8px 0 0 0; font-size: 14px; font-weight: 600;">Daily Attendance Digest</p>
+        </div>
+        <div style="padding: 32px;">
+          <h2 style="color: #3730a3; margin-top: 0; font-size: 20px;">Daily Summary (${date})</h2>
+          <p style="font-size: 15px; color: #475569;">Hello ${username}, here is your daily attendance summary:</p>
+          <div style="background-color: #eef2ff; border: 1px solid #c7d2fe; border-radius: 10px; padding: 16px; margin: 20px 0;">
+            <p style="margin: 4px 0; font-size: 14px; color: #312e81;"><strong>Status:</strong> ${stats.status || 'Check-in recorded'}</p>
+            <p style="margin: 4px 0; font-size: 14px; color: #312e81;"><strong>Present Employees:</strong> ${stats.presentCount || 'N/A'}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  return sendEmail(userEmail, `Daily Attendance Digest - ${date}`, html);
+};
+
 module.exports = {
   sendNewLoginEmail,
   sendPasswordResetEmail,
@@ -241,5 +340,10 @@ module.exports = {
   sendAccountLockedEmail,
   sendVerificationEmail,
   sendActivationEmail,
-  sendOtpEmail
+  sendOtpEmail,
+  sendLeaveApprovalEmail,
+  sendLeaveRejectionEmail,
+  sendHolidayReminderEmail,
+  sendAttendanceDigestEmail
 };
+
