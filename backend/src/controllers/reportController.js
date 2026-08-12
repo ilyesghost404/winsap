@@ -85,12 +85,36 @@ const getReportStats = async (req, res) => {
         });
 
         // Holidays this month
-        const holidaysThisMonthResult = await db.query(`
-            SELECT COUNT(*) FROM holidays 
-            WHERE EXTRACT(YEAR FROM holiday_date) = $1 
-            AND EXTRACT(MONTH FROM holiday_date) = $2
-        `, [currentDate.getFullYear(), currentDate.getMonth() + 1]);
-        const holidaysThisMonth = parseInt(holidaysThisMonthResult.rows[0].count);
+        const year = currentDate.getFullYear();
+        const month = currentDate.getMonth() + 1;
+        const startOfMonth = `${year}-${String(month).padStart(2, '0')}-01`;
+        const lastDayNum = new Date(year, month, 0).getDate();
+        const endOfMonth = `${year}-${String(month).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`;
+        const holidaysThisMonthList = await getHolidays(startOfMonth, endOfMonth);
+        const holidaysThisMonth = holidaysThisMonthList.length;
+
+        // Most impacted department
+        const deptImpactResult = await db.query(`
+            SELECT d.name, COUNT(a.id) as count
+            FROM absences a
+            JOIN employees e ON a.employee_id = e.id
+            JOIN departments d ON e.department_id = d.id
+            ${whereClause}
+            GROUP BY d.name
+            ORDER BY count DESC
+            LIMIT 1
+        `, params);
+        const mostImpactedDepartment = deptImpactResult.rows.length > 0 ? deptImpactResult.rows[0].name : 'None';
+
+        // Average absence duration in working days
+        const avgDurationResult = await db.query(`
+            SELECT COALESCE(ROUND(AVG(a.end_date - a.start_date + 1), 1), 0) as avg_duration
+            FROM absences a
+            JOIN employees e ON a.employee_id = e.id
+            LEFT JOIN departments d ON e.department_id = d.id
+            ${whereClause}
+        `, params);
+        const avgDuration = parseFloat(avgDurationResult.rows[0].avg_duration) || 0;
 
         res.json({
             success: true,
@@ -102,7 +126,9 @@ const getReportStats = async (req, res) => {
                 pendingRequests: statusCounts.Pending || 0,
                 approvedRequests: statusCounts.Validated || 0,
                 rejectedRequests: statusCounts.Rejected || 0,
-                holidaysThisMonth
+                holidaysThisMonth,
+                mostImpactedDepartment,
+                avgDuration
             }
         });
     } catch (error) {
@@ -213,7 +239,9 @@ const getAbsenceTypes = async (req, res) => {
             success: true,
             data: result.rows.map(row => ({
                 name: row.name,
-                value: parseInt(row.count)
+                type: row.name,
+                value: parseInt(row.count),
+                count: parseInt(row.count)
             }))
         });
     } catch (error) {
@@ -447,14 +475,20 @@ const getAttendanceMatrix = async (req, res) => {
 
         // 2. Fetch all holidays in this month range
         const holidaysResult = await db.query(
-            "SELECT holiday_date, name FROM holidays WHERE holiday_date BETWEEN $1 AND $2",
-            [startDateStr, endDateStr]
+            "SELECT holiday_date, COALESCE(end_date, holiday_date) AS end_date, name FROM holidays WHERE holiday_date <= $2 AND COALESCE(end_date, holiday_date) >= $1",
+            [endDateStr, startDateStr]
         );
         const holidays = holidaysResult.rows;
         const holidayMap = {};
         holidays.forEach(h => {
-            const dateStr = toDateString(h.holiday_date);
-            holidayMap[dateStr] = h.name;
+            const hStartStr = toDateString(h.holiday_date);
+            const hEndStr = toDateString(h.end_date);
+            const curStart = new Date(Math.max(new Date(hStartStr).getTime(), new Date(startDateStr).getTime()));
+            const curEnd = new Date(Math.min(new Date(hEndStr).getTime(), new Date(endDateStr).getTime()));
+            for (let d = new Date(curStart); d <= curEnd; d.setDate(d.getDate() + 1)) {
+                const dateStr = toDateString(d);
+                holidayMap[dateStr] = h.name;
+            }
         });
 
         // 3. Fetch all validated absences for this month range
@@ -581,12 +615,15 @@ const getAttendanceMatrix = async (req, res) => {
             };
         });
 
+        const daysInMonth = Array.from({ length: totalDays }, (_, i) => i + 1);
+
         res.json({
             success: true,
             data: {
                 year: parsedYear,
                 month: parsedMonth,
                 totalDays,
+                daysInMonth,
                 matrix
             }
         });
@@ -679,6 +716,74 @@ const exportEmployeeYearlyPdf = async (req, res) => {
   }
 };
 
+const getYearlyTeamReport = async (req, res) => {
+  try {
+    const year = parseInt(req.params.year, 10);
+    if (req.user.role === 'employee') {
+      return res.status(403).json({ success: false, message: "Access forbidden" });
+    }
+
+    const employeeReportService = require("../services/employeeReportService");
+    const teamData = await employeeReportService.getYearlyTeamReportData(year);
+    res.json({ success: true, data: teamData });
+  } catch (error) {
+    console.error("Error in getYearlyTeamReport:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to generate team report" });
+  }
+};
+
+const exportYearlyTeamExcel = async (req, res) => {
+  try {
+    const year = parseInt(req.params.year, 10);
+    if (req.user.role === 'employee') {
+      return res.status(403).json({ success: false, message: "Access forbidden" });
+    }
+
+    const employeeReportService = require("../services/employeeReportService");
+    const teamData = await employeeReportService.getYearlyTeamReportData(year);
+    const workbook = employeeReportService.generateYearlyTeamExcel(teamData);
+
+    const fileName = `Yearly_CRA_Report_${year}.xlsx`;
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${fileName}"`
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    console.error("Error in exportYearlyTeamExcel:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to export Excel team report" });
+  }
+};
+
+const exportYearlyTeamPdf = async (req, res) => {
+  try {
+    const year = parseInt(req.params.year, 10);
+    if (req.user.role === 'employee') {
+      return res.status(403).json({ success: false, message: "Access forbidden" });
+    }
+
+    const employeeReportService = require("../services/employeeReportService");
+    const teamData = await employeeReportService.getYearlyTeamReportData(year);
+
+    const fileName = `Yearly_CRA_Report_${year}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+    employeeReportService.generateYearlyTeamPdf(teamData, res);
+  } catch (error) {
+    console.error("Error in exportYearlyTeamPdf:", error);
+    res.status(500).json({ success: false, message: error.message || "Failed to export PDF team report" });
+  }
+};
+
 module.exports = {
     getReportStats,
     getMonthlyAbsenceEvolution,
@@ -691,5 +796,8 @@ module.exports = {
     getAttendanceMatrix,
     getEmployeeYearlyReport,
     exportEmployeeYearlyExcel,
-    exportEmployeeYearlyPdf
+    exportEmployeeYearlyPdf,
+    getYearlyTeamReport,
+    exportYearlyTeamExcel,
+    exportYearlyTeamPdf
 };

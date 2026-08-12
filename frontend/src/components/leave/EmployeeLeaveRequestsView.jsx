@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { 
-  Plus, Edit2, Trash2, CalendarDays, Clock, FileText, 
-  CheckCircle2, XCircle, Search, Umbrella, Activity, BookOpen, AlertTriangle, Laptop
+import {
+  Plus, Edit2, Trash2, CalendarDays, Clock, FileText,
+  CheckCircle2, XCircle, Search, Umbrella, Activity, BookOpen, AlertTriangle, Laptop, Zap
 } from 'lucide-react';
 import Card from '../Card';
 import Button from '../Button';
@@ -10,22 +10,10 @@ import Modal from '../Modal';
 import LoadingSpinner from '../LoadingSpinner';
 import EmptyState from '../EmptyState';
 import Pagination from '../Pagination';
+import StatusBadge from '../StatusBadge';
 import { getAbsences, createAbsence, updateAbsence, deleteAbsence } from '../../services/absenceService';
 import { getMyLeaveBalance } from '../../services/leaveBalanceService';
-
-const TYPE_CONFIG = {
-  'Vacation': { icon: Umbrella, color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-200', ring: 'ring-blue-600' },
-  'Sick Leave': { icon: Activity, color: 'text-red-600', bg: 'bg-red-50', border: 'border-red-200', ring: 'ring-red-600' },
-  'Telework': { icon: Laptop, color: 'text-indigo-600', bg: 'bg-indigo-50', border: 'border-indigo-200', ring: 'ring-indigo-600' },
-  'Training': { icon: BookOpen, color: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-200', ring: 'ring-purple-600' },
-  'Other': { icon: FileText, color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200', ring: 'ring-slate-600' },
-};
-
-const STATUS_CONFIG = {
-  'Pending': { icon: Clock, color: 'text-amber-600', bg: 'bg-amber-100', border: 'border-amber-200' },
-  'Validated': { icon: CheckCircle2, color: 'text-emerald-600', bg: 'bg-emerald-100', border: 'border-emerald-200' },
-  'Rejected': { icon: XCircle, color: 'text-red-600', bg: 'bg-red-100', border: 'border-red-200' },
-};
+import { useAuth } from '../../context/AuthContext';
 
 const parseLocalDate = (dateStr) => {
   if (!dateStr) return null;
@@ -35,9 +23,10 @@ const parseLocalDate = (dateStr) => {
 };
 
 const EmployeeLeaveRequestsView = () => {
+  const { user } = useAuth();
   const [absences, setAbsences] = useState([]);
   const [loading, setLoading] = useState(true);
-  
+
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [typeFilter, setTypeFilter] = useState('All');
@@ -49,9 +38,8 @@ const EmployeeLeaveRequestsView = () => {
   const [totalPages, setTotalPages] = useState(0);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingAbsence, setEditingAbsence] = useState(null);
-  
+
   const [formData, setFormData] = useState({
     type: 'Vacation',
     start_date: '',
@@ -59,30 +47,31 @@ const EmployeeLeaveRequestsView = () => {
     reason: '',
   });
 
-  const [leaveBalance, setLeaveBalance] = useState({ paidLeave: 0, sickLeave: 0 });
-
-  const fetchLeaveBalance = async () => {
-    try {
-      const res = await getMyLeaveBalance();
-      if (res.success && res.data) {
-        setLeaveBalance(res.data);
-      }
-    } catch (error) {
-      console.error('Error fetching leave balance:', error);
-    }
-  };
+  const [balance, setBalance] = useState({
+    paidLeave: 22,
+    sickLeave: 5,
+    telework: 0,
+    rtt: 0,
+  });
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      const absencesData = await getAbsences({ page, limit, search: searchTerm });
+      const [absencesData, balanceRes] = await Promise.all([
+        getAbsences({ page, limit, search: searchTerm }),
+        getMyLeaveBalance().catch(() => null),
+      ]);
+
       setAbsences(absencesData.data || []);
       setTotal(absencesData.total || 0);
       setTotalPages(absencesData.totalPages || 0);
-      await fetchLeaveBalance();
+
+      if (balanceRes && balanceRes.success && balanceRes.data) {
+        setBalance(balanceRes.data);
+      }
     } catch (error) {
-      console.error('Error fetching absences:', error);
-      toast.error('Failed to load your leave requests');
+      console.error('Error fetching employee leave data:', error);
+      toast.error('Failed to load leave requests');
     } finally {
       setLoading(false);
     }
@@ -92,18 +81,18 @@ const EmployeeLeaveRequestsView = () => {
     fetchData();
   }, [page]);
 
-  // Debounced search
   useEffect(() => {
     const timer = setTimeout(() => {
-      setPage(1); // reset to page 1 on search
+      setPage(1);
       fetchData();
-    }, 500);
+    }, 400);
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
   const handleAdd = () => {
     setEditingAbsence(null);
     setFormData({
+      employee_id: user?.employee_id || '',
       type: 'Vacation',
       start_date: '',
       end_date: '',
@@ -115,418 +104,366 @@ const EmployeeLeaveRequestsView = () => {
   const handleEdit = (absence) => {
     setEditingAbsence(absence);
     setFormData({
+      employee_id: absence.employee_id,
       type: absence.type,
-      start_date: parseLocalDate(absence.start_date).toISOString().split('T')[0],
-      end_date: parseLocalDate(absence.end_date).toISOString().split('T')[0],
+      start_date: absence.start_date ? absence.start_date.split('T')[0] : '',
+      end_date: absence.end_date ? absence.end_date.split('T')[0] : '',
       reason: absence.reason || '',
     });
     setIsModalOpen(true);
   };
 
   const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to withdraw this request?')) {
+    if (window.confirm('Are you sure you want to cancel this leave application?')) {
       try {
         await deleteAbsence(id);
+        toast.success('Leave application removed');
         fetchData();
-        toast.success('Request withdrawn successfully');
       } catch (error) {
-        console.error('Error deleting request:', error);
-        toast.error('Failed to withdraw request');
+        console.error('Error deleting absence:', error);
+        toast.error('Failed to remove request');
       }
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.start_date || !formData.end_date || !formData.type) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
-    if (new Date(formData.end_date) < new Date(formData.start_date)) {
-      toast.error('End date cannot be before start date');
-      return;
-    }
-
     try {
-      setIsSubmitting(true);
       if (editingAbsence) {
         await updateAbsence(editingAbsence.id, formData);
-        toast.success('Request updated successfully');
+        toast.success('Request updated');
       } else {
         await createAbsence(formData);
-        toast.success('Leave request submitted successfully');
+        toast.success('Leave request submitted for approval');
       }
       setIsModalOpen(false);
       fetchData();
     } catch (error) {
-      console.error('Error saving request:', error);
-      toast.error(error?.response?.data?.message || 'Failed to submit request');
-    } finally {
-      setIsSubmitting(false);
+      console.error('Error saving absence:', error);
+      toast.error(error.response?.data?.message || 'Failed to submit request');
     }
   };
 
-  const handleTomorrowRequest = async () => {
-    if (window.confirm("Are you sure you want to request to work from home tomorrow?")) {
-      try {
-        setIsSubmitting(true);
-        
-        const today = new Date();
-        const tomorrow = new Date(today);
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        
-        const year = tomorrow.getFullYear();
-        const month = String(tomorrow.getMonth() + 1).padStart(2, '0');
-        const day = String(tomorrow.getDate()).padStart(2, '0');
-        const tomorrowStr = `${year}-${month}-${day}`;
-
-        await createAbsence({
-          type: 'Telework',
-          start_date: tomorrowStr,
-          end_date: tomorrowStr,
-          reason: 'Work from home tomorrow (Quick request)'
-        });
-        
-        toast.success("Tomorrow's remote work request submitted successfully!");
-        fetchData();
-      } catch (error) {
-        console.error("Error WFH tomorrow:", error);
-        toast.error(error?.response?.data?.message || "Failed to submit request for tomorrow");
-      } finally {
-        setIsSubmitting(false);
-      }
-    }
-  };
-
-  const filteredAbsences = Array.isArray(absences) ? absences.filter(a => {
+  const filteredAbsences = absences.filter((a) => {
     const matchesStatus = statusFilter === 'All' || a.status === statusFilter;
     const matchesType = typeFilter === 'All' || a.type === typeFilter;
-    
     return matchesStatus && matchesType;
-  }) : [];
+  });
 
   return (
-    <div className="min-h-screen pb-12">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-800 tracking-tight">My Requests</h1>
-          <p className="text-slate-500 font-medium mt-1">Manage and track your leave applications</p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <button
-            onClick={handleTomorrowRequest}
-            disabled={isSubmitting}
-            className="inline-flex items-center justify-center gap-2 py-2.5 px-5 rounded-xl font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 hover:text-indigo-700 transition-all disabled:opacity-50 cursor-pointer"
-          >
-            <Laptop size={16} />
-            Work From Home Tomorrow
-          </button>
-          <Button icon={Plus} onClick={handleAdd} className="shadow-lg hover:shadow-blue-500/25 transition-all px-6 py-2.5" disabled={isSubmitting}>
-            New Request
+    <div className="space-y-6">
+      {/* ── Bright Blue Hero Banner ────────────────────────────────── */}
+      <div className="rounded-3xl bg-gradient-to-r from-[#1c2b33] to-[#0064e0] p-6 sm:p-8 text-white shadow-electric-glow border border-blue-400/30 relative overflow-hidden">
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-widest text-blue-100 font-heading mb-1">
+              <Zap size={14} className="text-blue-100" />
+              <span>Personal Time-Off Portal</span>
+            </div>
+            <h1 className="text-2xl sm:text-4xl font-heading font-black tracking-tight text-white">
+              MY LEAVE REQUESTS
+            </h1>
+            <p className="text-blue-100 text-xs sm:text-sm mt-1 max-w-xl">
+              Submit vacation dates, medical leaves, or telework days and monitor managerial approval.
+            </p>
+          </div>
+
+          <Button variant="secondary" icon={Plus} onClick={handleAdd}>
+            Apply for Leave
           </Button>
+        </div>
+
+        {/* Ambient Glow */}
+        <div className="absolute -right-20 -top-20 w-80 h-80 bg-white/15 rounded-full blur-3xl pointer-events-none" />
+      </div>
+
+      {/* Balance Badges Card */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="p-4 rounded-2xl bg-white border border-[#d9e7f5] shadow-xs flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0 border border-blue-200">
+            <Umbrella size={20} />
+          </div>
+          <div>
+            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider font-heading">
+              Paid Leave
+            </p>
+            <p className="text-xl font-heading font-black text-[#172033] mt-0.5">
+              {balance.paidLeave ?? 22}d <span className="text-xs font-normal text-slate-400">left</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-white border border-[#d9e7f5] shadow-xs flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center flex-shrink-0 border border-rose-200">
+            <Activity size={20} />
+          </div>
+          <div>
+            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider font-heading">
+              Sick Leave
+            </p>
+            <p className="text-xl font-heading font-black text-[#172033] mt-0.5">
+              {balance.sickLeave ?? 5}d <span className="text-xs font-normal text-slate-400">left</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-white border border-[#d9e7f5] shadow-xs flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0 border border-indigo-200">
+            <Laptop size={20} />
+          </div>
+          <div>
+            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider font-heading">
+              Telework
+            </p>
+            <p className="text-xl font-heading font-black text-[#172033] mt-0.5">
+              {balance.telework ?? 0}d <span className="text-xs font-normal text-slate-400">logged</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-white border border-[#d9e7f5] shadow-xs flex items-center gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center flex-shrink-0 border border-violet-200">
+            <BookOpen size={20} />
+          </div>
+          <div>
+            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider font-heading">
+              Training
+            </p>
+            <p className="text-xl font-heading font-black text-[#172033] mt-0.5">
+              {balance.rtt ?? 0}d <span className="text-xs font-normal text-slate-400">taken</span>
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* Filters Bar */}
-      <Card className="p-4 mb-8 shadow-sm border-slate-200">
-        <div className="flex flex-col sm:flex-row flex-wrap items-center gap-4">
-          <div className="relative flex-1 w-full sm:min-w-[250px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+      {/* Filter Toolbar */}
+      <div className="bg-white rounded-2xl border border-[#d9e7f5] p-4 shadow-xs">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input
               type="text"
-              placeholder="Search by reason..."
+              placeholder="Search your requests by reason or type…"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all font-medium text-slate-700 bg-slate-50/50 focus:bg-white"
+              className="w-full pl-10 pr-4 py-2 bg-[#f0f7ff] border border-[#d9e7f5] rounded-xl text-xs font-semibold text-[#172033] placeholder-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition-all"
             />
           </div>
-          
-          <div className="flex w-full sm:w-auto gap-4">
+
+          <div className="flex items-center gap-2 flex-wrap">
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="flex-1 sm:w-40 px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700 bg-slate-50/50 focus:bg-white cursor-pointer appearance-none"
+              className="px-3.5 py-2 bg-[#f0f7ff] border border-[#d9e7f5] rounded-xl text-xs font-bold text-[#172033] cursor-pointer focus:bg-white focus:outline-none"
             >
               <option value="All">All Statuses</option>
-              <option value="Pending">Pending</option>
+              <option value="Pending">Pending Review</option>
               <option value="Validated">Approved</option>
               <option value="Rejected">Rejected</option>
             </select>
-            
+
             <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
-              className="flex-1 sm:w-40 px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700 bg-slate-50/50 focus:bg-white cursor-pointer appearance-none"
+              className="px-3.5 py-2 bg-[#f0f7ff] border border-[#d9e7f5] rounded-xl text-xs font-bold text-[#172033] cursor-pointer focus:bg-white focus:outline-none"
             >
               <option value="All">All Types</option>
-              <option value="Vacation">Vacation</option>
+              <option value="Vacation">Vacation Leave</option>
               <option value="Sick Leave">Sick Leave</option>
+              <option value="Telework">Telework</option>
               <option value="Training">Training</option>
-              <option value="Other">Other</option>
             </select>
           </div>
         </div>
+      </div>
+
+      {/* Table Card */}
+      <Card
+        headerVariant="softBlue"
+        title={`My Request History (${filteredAbsences.length})`}
+        subtitle="Full log of your submitted absences, dates, and validation status."
+      >
+        {loading ? (
+          <div className="py-16 flex justify-center">
+            <LoadingSpinner size="md" text="Loading your requests…" />
+          </div>
+        ) : filteredAbsences.length === 0 ? (
+          <EmptyState
+            title="No requests found"
+            description="You have not submitted any leave requests matching the filters."
+            icon={CalendarDays}
+            action={handleAdd}
+            actionLabel="Apply for Leave"
+          />
+        ) : (
+          <div className="overflow-x-auto -mx-6 -my-6">
+            <table className="w-full text-sm">
+              <thead className="bg-[#f0f7ff] text-[#1e3a8a] border-b border-[#d9e7f5]">
+                <tr>
+                  <th className="px-6 py-3.5 text-left text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#1e3a8a]">
+                    Type
+                  </th>
+                  <th className="px-4 py-3.5 text-left text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#1e3a8a]">
+                    Date Range
+                  </th>
+                  <th className="px-4 py-3.5 text-left text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#1e3a8a]">
+                    Duration
+                  </th>
+                  <th className="px-4 py-3.5 text-left text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#1e3a8a]">
+                    Reason / Notes
+                  </th>
+                  <th className="px-4 py-3.5 text-left text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#1e3a8a]">
+                    Status
+                  </th>
+                  <th className="px-6 py-3.5 text-right text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#1e3a8a]">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#f0f7ff] bg-white">
+                {filteredAbsences.map((absence) => {
+                  const startDate = new Date(absence.start_date);
+                  const endDate = new Date(absence.end_date);
+                  const durationDays = Math.round((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+
+                  return (
+                    <tr key={absence.id} className="hover:bg-[#f0f7ff]/60 transition-colors">
+                      <td className="px-6 py-3.5">
+                        <StatusBadge status={absence.type} type="soft" />
+                      </td>
+
+                      <td className="px-4 py-3.5 text-xs text-slate-700 font-semibold font-mono">
+                        {startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        <span className="text-slate-400 mx-1">→</span>
+                        {endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </td>
+
+                      <td className="px-4 py-3.5 text-xs font-black text-blue-600 font-mono">
+                        {durationDays}d
+                      </td>
+
+                      <td className="px-4 py-3.5 text-xs text-slate-600 max-w-xs truncate">
+                        {absence.reason || 'No details provided'}
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        <StatusBadge status={absence.status} type="dot" />
+                      </td>
+
+                      <td className="px-6 py-3.5 text-right">
+                        {(!absence.status || absence.status === 'Pending' || absence.status === 'PENDING') ? (
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => handleEdit(absence)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-[#f0f7ff] transition-colors cursor-pointer"
+                              title="Edit Request"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(absence.id)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                              title="Cancel Request"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400 font-medium">Locked</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {totalPages > 1 && (
+          <div className="pt-4 border-t border-[#d9e7f5]">
+            <Pagination
+              page={page}
+              limit={limit}
+              total={total}
+              totalPages={totalPages}
+              onPageChange={(newPage) => setPage(newPage)}
+            />
+          </div>
+        )}
       </Card>
 
-      {/* Content Grid */}
-      {loading ? (
-        <div className="py-20 flex flex-col items-center justify-center">
-          <LoadingSpinner size="lg" />
-          <p className="mt-4 text-slate-500 animate-pulse font-medium">Loading your requests...</p>
-        </div>
-      ) : filteredAbsences.length === 0 ? (
-        <Card className="py-20 shadow-sm border-slate-200">
-          <EmptyState 
-            title="No requests found" 
-            description={searchTerm || statusFilter !== 'All' || typeFilter !== 'All' ? "Try adjusting your filters to see more results." : "You haven't submitted any leave requests yet."}
-            icon={FileText} 
-          />
-          {(!searchTerm && statusFilter === 'All' && typeFilter === 'All') && (
-            <div className="flex justify-center mt-6">
-              <Button onClick={handleAdd} icon={Plus}>Create your first request</Button>
-            </div>
-          )}
-        </Card>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredAbsences.map(request => {
-            const typeConf = TYPE_CONFIG[request.type] || TYPE_CONFIG['Other'];
-            const statConf = STATUS_CONFIG[request.status] || STATUS_CONFIG['Pending'];
-            const TypeIcon = typeConf.icon;
-            const StatIcon = statConf.icon;
-
-            const start = parseLocalDate(request.start_date);
-            const end = parseLocalDate(request.end_date);
-            
-            // Calculate duration purely for visual representation
-            const diffTime = Math.abs(end - start);
-            const durationDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-
-            return (
-              <Card key={request.id} className="p-0 overflow-hidden shadow-sm hover:shadow-md transition-shadow group border-slate-200 flex flex-col">
-                <div className={`p-5 border-b flex items-start justify-between ${typeConf.bg} ${typeConf.border}`}>
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-xl bg-white shadow-sm flex items-center justify-center ${typeConf.color}`}>
-                      <TypeIcon size={20} />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-slate-800">{request.type}</h3>
-                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mt-0.5">
-                        {durationDays} Day{durationDays !== 1 ? 's' : ''}
-                      </p>
-                    </div>
-                  </div>
-                  <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border shadow-sm ${statConf.bg} ${statConf.color} ${statConf.border}`}>
-                    <StatIcon size={14} strokeWidth={3} />
-                    {request.status === 'Validated' ? 'Approved' : request.status}
-                  </div>
-                </div>
-
-                <div className="p-5 flex-1 flex flex-col">
-                  <div className="flex items-center gap-3 mb-4 p-3 bg-slate-50 rounded-xl border border-slate-100">
-                    <CalendarDays className="text-slate-400" size={18} />
-                    <div className="flex flex-col">
-                      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Date Range</span>
-                      <span className="text-sm font-bold text-slate-700 mt-0.5">
-                        {start?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                        <span className="text-slate-300 mx-2">→</span>
-                        {end?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex-1">
-                    <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Reason</span>
-                    <p className="text-sm text-slate-600 line-clamp-3 leading-relaxed">
-                      {request.reason || <span className="italic text-slate-400">No reason provided</span>}
-                    </p>
-                  </div>
-
-                  {request.status === 'Pending' && (
-                    <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button 
-                        onClick={() => handleEdit(request)}
-                        className="p-2 rounded-xl text-blue-600 hover:bg-blue-50 transition-colors"
-                        title="Edit Request"
-                      >
-                        <Edit2 size={18} />
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(request.id)}
-                        className="p-2 rounded-xl text-red-600 hover:bg-red-50 transition-colors"
-                        title="Withdraw Request"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  )}
-                  {request.status !== 'Pending' && (
-                    <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
-                      <span className="text-xs font-semibold text-slate-400">Submitted on {new Date(request.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
-                    </div>
-                  )}
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-      
-      {!loading && filteredAbsences.length > 0 && (
-        <Pagination 
-          page={page} 
-          limit={limit} 
-          total={total} 
-          totalPages={totalPages} 
-          onPageChange={(newPage) => setPage(newPage)} 
-        />
-      )}
-
-      {/* Enhanced Create/Edit Modal */}
+      {/* Modal for Employee Leave Request */}
       <Modal
         isOpen={isModalOpen}
-        onClose={() => !isSubmitting && setIsModalOpen(false)}
-        title={editingAbsence ? 'Edit Request' : 'New Leave Request'}
+        onClose={() => setIsModalOpen(false)}
+        title={editingAbsence ? 'Edit Leave Application' : 'Apply for Leave'}
+        subtitle="Submit a vacation, sick leave, or telework request to your manager."
       >
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-3">Leave Type <span className="text-red-500">*</span></label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-              {['Vacation', 'Sick Leave', 'Telework', 'Training', 'Other'].map(type => {
-                const conf = TYPE_CONFIG[type];
-                const Icon = conf.icon;
-                const isSelected = formData.type === type;
-                return (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setFormData({ ...formData, type })}
-                    className={`flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all ${
-                      isSelected 
-                        ? `${conf.border} ${conf.bg} ${conf.ring} ring-1 shadow-sm` 
-                        : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    <Icon size={24} className={`mb-2 ${isSelected ? conf.color : 'text-slate-400'}`} />
-                    <span className={`text-sm font-bold ${isSelected ? 'text-slate-800' : 'text-slate-500'}`}>{type}</span>
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* Leave Balance Information / Warning */}
-            {(() => {
-              if (formData.type === 'Telework') {
-                return (
-                  <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex items-center gap-3 animate-in fade-in duration-200">
-                    <Laptop className="text-indigo-600 flex-shrink-0" size={20} />
-                    <div>
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Telework / Remote Work</span>
-                      <span className="text-xs font-semibold text-indigo-900 mt-1 block">
-                        This request is for Remote Work and will <span className="font-bold underline text-indigo-700">NOT</span> affect your leave balance.
-                      </span>
-                    </div>
-                  </div>
-                );
-              }
-
-              const balanceKey = formData.type === 'Vacation' ? 'paidLeave' : formData.type === 'Sick Leave' ? 'sickLeave' : null;
-              const available = balanceKey ? leaveBalance[balanceKey] : null;
-              
-              // Calculate requested working days
-              let requestedDays = 0;
-              if (formData.start_date && formData.end_date) {
-                const start = new Date(formData.start_date);
-                const end = new Date(formData.end_date);
-                if (end >= start) {
-                  const current = new Date(start);
-                  while (current <= end) {
-                    const day = current.getDay();
-                    if (day !== 0 && day !== 6) {
-                      requestedDays++;
-                    }
-                    current.setDate(current.getDate() + 1);
-                  }
-                }
-              }
-              const showBalanceWarning = available !== null && requestedDays > available;
-
-              return balanceKey ? (
-                <div className="space-y-3">
-                  <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
-                    <div>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Available Balance</span>
-                      <span className="text-sm font-bold text-slate-700 mt-1 block">
-                        {formData.type === 'Vacation' ? 'Paid Leave (Congés payés)' : 'Sick Leave (Congés maladie)'}: <span className="text-blue-600 text-base">{available} days</span> remaining
-                      </span>
-                    </div>
-                    {requestedDays > 0 && (
-                      <div className="text-left sm:text-right sm:border-l sm:border-slate-200 sm:pl-4">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Requested Duration</span>
-                        <span className="text-sm font-bold text-slate-700 mt-1 block">
-                          {requestedDays} working day{requestedDays > 1 ? 's' : ''}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  {showBalanceWarning && (
-                    <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 text-xs text-amber-800 flex items-center gap-2 animate-in slide-in-from-top duration-200 font-medium">
-                      <AlertTriangle size={18} className="flex-shrink-0 text-amber-600" />
-                      <span>Warning: The requested leave duration ({requestedDays} days) exceeds your available balance ({available} days). This request might be rejected.</span>
-                    </div>
-                  )}
-                </div>
-              ) : null;
-            })()}
+            <label className="block text-xs font-heading font-extrabold text-[#172033] uppercase tracking-wider mb-1.5">
+              Leave Classification <span className="text-rose-500">*</span>
+            </label>
+            <select
+              value={formData.type}
+              onChange={(e) => setFormData({ ...formData, type: e.target.value })}
+              className="w-full px-3.5 py-2.5 bg-white border border-[#d9e7f5] rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 cursor-pointer"
+            >
+              <option value="Vacation">Vacation Leave (Congés payés)</option>
+              <option value="Sick Leave">Sick Leave (Maladie)</option>
+              <option value="Telework">Telework / Remote</option>
+              <option value="Training">Training / Workshop</option>
+            </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">Start Date <span className="text-red-500">*</span></label>
+              <label className="block text-xs font-heading font-extrabold text-[#172033] uppercase tracking-wider mb-1.5">
+                Start Date <span className="text-rose-500">*</span>
+              </label>
               <input
                 type="date"
                 required
                 value={formData.start_date}
                 onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700 bg-slate-50 focus:bg-white transition-colors"
+                className="w-full px-3.5 py-2.5 bg-white border border-[#d9e7f5] rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
               />
             </div>
+
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">End Date <span className="text-red-500">*</span></label>
+              <label className="block text-xs font-heading font-extrabold text-[#172033] uppercase tracking-wider mb-1.5">
+                End Date <span className="text-rose-500">*</span>
+              </label>
               <input
                 type="date"
                 required
-                min={formData.start_date}
                 value={formData.end_date}
                 onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700 bg-slate-50 focus:bg-white transition-colors"
+                className="w-full px-3.5 py-2.5 bg-white border border-[#d9e7f5] rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-2">Reason / Comments</label>
-            <textarea
+            <label className="block text-xs font-heading font-extrabold text-[#172033] uppercase tracking-wider mb-1.5">
+              Reason / Justification
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Family vacation or medical certificate submitted"
               value={formData.reason}
               onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-              rows={3}
-              placeholder="Provide a brief reason for your absence..."
-              className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700 bg-slate-50 focus:bg-white transition-colors resize-none"
+              className="w-full px-3.5 py-2.5 bg-white border border-[#d9e7f5] rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
             />
           </div>
 
-          <div className="flex justify-end gap-3 pt-6 border-t border-slate-100">
-            <button 
-              type="button"
-              onClick={() => setIsModalOpen(false)}
-              disabled={isSubmitting}
-              className="px-6 py-2.5 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50"
-            >
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#d9e7f5]">
+            <Button variant="secondary" onClick={() => setIsModalOpen(false)}>
               Cancel
-            </button>
-            <Button type="submit" disabled={isSubmitting} className="px-8 py-2.5 shadow-md">
-              {isSubmitting ? 'Saving...' : (editingAbsence ? 'Update Request' : 'Submit Request')}
+            </Button>
+            <Button type="submit">
+              {editingAbsence ? 'Save Changes' : 'Submit Request'}
             </Button>
           </div>
         </form>

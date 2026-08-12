@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Lock, Mail, Eye, EyeOff, CalendarRange, Loader2, Camera } from 'lucide-react';
+import { Lock, Mail, Eye, EyeOff, Camera } from 'lucide-react';
 import Button from '../components/Button';
+import WinsapLogo from '../components/WinsapLogo';
 
 const Login = () => {
   const [username, setUsername] = useState('');
@@ -35,137 +36,118 @@ const Login = () => {
     setIsSubmitting(true);
 
     try {
-      const user = await login(username, password, rememberMe);
-      // Navigation is now handled by the useEffect watching isAuthenticated
+      await login(username, password, rememberMe);
     } catch (err) {
       console.error('[Login] Submission Error:', err);
-      setError(err.message || 'Login failed. Please check your credentials.');
+      setError(err.message || 'Invalid username or password. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-blue-900 py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
-      {/* Decorative background blobs */}
-      <div className="absolute top-[-10%] left-[-10%] w-[40rem] h-[40rem] rounded-full bg-blue-500/10 blur-[120px] pointer-events-none"></div>
-      <div className="absolute bottom-[-10%] right-[-10%] w-[45rem] h-[45rem] rounded-full bg-indigo-500/10 blur-[120px] pointer-events-none"></div>
+    <div className="min-h-screen w-full flex items-center justify-center bg-[#f4f7fc] py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+      {/* Ambient Gradient Glows */}
+      <div className="absolute -top-40 -left-40 w-96 h-96 bg-blue-200/50 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-sky-200/50 rounded-full blur-3xl pointer-events-none" />
 
-      <div className="max-w-md w-full space-y-8 relative z-10">
-        <div className="flex flex-col items-center">
-          <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-2xl mb-4 border border-blue-400/20 transform hover:scale-105 transition-transform duration-300">
-            <CalendarRange className="text-white" size={36} />
+      <div className="max-w-md w-full space-y-6 relative z-10">
+        {/* Brand Logo Header */}
+        <div className="flex flex-col items-center text-center space-y-2">
+          <div className="mb-1 flex justify-center">
+            <WinsapLogo variant="full" colorMode="original" size="2xl" />
           </div>
-          <h2 className="text-3xl font-extrabold text-white tracking-tight">WinSAP</h2>
-          <p className="mt-2 text-sm text-slate-400">
-            Employee Absence & attendance management portal
+
+          <p className="text-sm sm:text-base font-medium text-slate-500 tracking-normal pt-1">
+            Sign in to access your <span className="font-bold text-[#172033]">Winsap</span> workspace
           </p>
         </div>
 
-        <div className="backdrop-blur-xl bg-slate-900/60 border border-slate-700/50 rounded-3xl p-8 shadow-2xl shadow-black/40">
-          <form className="space-y-6" onSubmit={handleSubmit}>
-            {error && (
-              <div className="bg-red-500/15 border border-red-500/35 rounded-2xl p-4 text-sm text-red-300 flex items-center gap-2 animate-shake">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>
-                <span>{error}</span>
-              </div>
-            )}
+        {/* Login Card */}
+        <div className="bg-white rounded-3xl border border-[#d6e2f0] p-6 sm:p-8 shadow-premium-card">
+          {error && (
+            <div className="mb-5 p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700 flex items-center gap-2">
+              <span>{error}</span>
+            </div>
+          )}
 
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-slate-300">Username or Email</label>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-heading font-extrabold text-[#172033] uppercase tracking-wider mb-1.5">
+                Username or Email
+              </label>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                  <Mail size={18} />
-                </div>
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <input
                   type="text"
                   required
+                  placeholder="name@company.com"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="block w-full pl-10 pr-4 py-3 bg-slate-800/40 border border-slate-700/50 rounded-2xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-slate-800/80 transition-all text-sm"
-                  placeholder="Enter your username or email"
+                  className="w-full pl-10 pr-3.5 py-2.5 bg-[#f1f5ff] border border-[#d6e2f0] rounded-xl text-sm font-semibold text-[#172033] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#2563eb] focus:bg-white transition-all"
                 />
               </div>
             </div>
 
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-slate-300">Password</label>
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-heading font-extrabold text-[#172033] uppercase tracking-wider">
+                  Password
+                </label>
+                <Link
+                  to="/forgot-password"
+                  className="text-xs font-bold text-[#2563eb] hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                  <Lock size={18} />
-                </div>
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
+                  placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full pl-10 pr-12 py-3 bg-slate-800/40 border border-slate-700/50 rounded-2xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-slate-800/80 transition-all text-sm"
-                  placeholder="Enter your password"
+                  className="w-full pl-10 pr-10 py-2.5 bg-[#f1f5ff] border border-[#d6e2f0] rounded-xl text-sm font-semibold text-[#172033] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#2563eb] focus:bg-white transition-all"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 transition-colors"
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[#172033]"
                 >
-                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
             </div>
 
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
+            <div className="flex items-center justify-between pt-1">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
-                  id="remember-me"
                   type="checkbox"
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
-                  className="h-4.5 w-4.5 bg-slate-800/50 border border-slate-700/50 text-blue-600 focus:ring-blue-500 rounded-lg cursor-pointer"
+                  className="w-4 h-4 rounded border-[#d6e2f0] text-[#2563eb] focus:ring-[#2563eb]"
                 />
-                <label htmlFor="remember-me" className="ml-2 block text-sm text-slate-300 cursor-pointer select-none">
-                  Keep me signed in
-                </label>
-              </div>
-              <div className="text-sm">
-                <a href="/forgot-password" onClick={(e) => { e.preventDefault(); navigate('/forgot-password'); }} className="font-semibold text-blue-500 hover:text-blue-400 transition-colors">
-                  Forgot password?
-                </a>
-              </div>
+                <span className="text-xs font-bold text-slate-700">Remember session</span>
+              </label>
             </div>
 
-            <div>
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-2xl text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg shadow-blue-600/20 cursor-pointer"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="animate-spin" size={18} />
-                    Signing in...
-                  </>
-                ) : (
-                  'Sign In'
-                )}
-              </button>
-            </div>
-
-            <div className="relative flex py-2 items-center">
-              <div className="flex-grow border-t border-slate-700/50"></div>
-              <span className="flex-shrink mx-4 text-slate-500 text-xs font-bold uppercase tracking-wider">Or</span>
-              <div className="flex-grow border-t border-slate-700/50"></div>
-            </div>
-
-            <div>
-              <button
-                type="button"
-                onClick={() => navigate('/face-login')}
-                className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-slate-750/50 rounded-2xl text-sm font-bold text-slate-300 bg-slate-800/40 hover:bg-slate-800/80 hover:text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-blue-500 transition-all duration-300 cursor-pointer border-slate-700/50"
-              >
-                <Camera size={18} className="text-blue-500" />
-                Sign in with Face ID
-              </button>
-            </div>
+            <Button type="submit" loading={isSubmitting} className="w-full mt-2" size="lg">
+              Sign In to Dashboard
+            </Button>
           </form>
+
+          {/* Alternative Facial Recognition Access */}
+          <div className="mt-6 pt-5 border-t border-[#d6e2f0] text-center">
+            <Link
+              to="/face-login"
+              className="inline-flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl bg-[#eff6ff] hover:bg-[#dbeafe] text-[#2563eb] font-extrabold text-xs border border-[#bfdbfe] transition-all"
+            >
+              <Camera size={16} />
+              <span>Sign In with Biometric Face Recognition</span>
+            </Link>
+          </div>
         </div>
       </div>
     </div>

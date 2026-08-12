@@ -1,16 +1,28 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { getLiveCraData } from '../services/craService';
+import { getAllActivities } from '../services/craService';
 import { connectSocket } from '../services/socket';
 import {
-  Activity, Play, Radio, RefreshCw, AlertCircle,
-  Maximize, Minimize, Clock
+  Radio,
+  RefreshCw,
+  AlertCircle,
+  Maximize,
+  Minimize,
+  Clock,
+  Search,
+  X,
+  Play,
+  Hash,
+  ShieldCheck,
+  LayoutGrid,
+  Table as TableIcon
 } from 'lucide-react';
+import StatusBadge from '../components/StatusBadge';
 
-// ─── Live stopwatch ─────────────────────────────────────────────────────────
+// ─── Live stopwatch calculating strictly from DB start_time ──────────────────
 
-const LiveStopwatch = ({ startTime }) => {
+const LiveStopwatch = ({ startTime, size = 'default' }) => {
   const [elapsed, setElapsed] = useState('00:00:00');
 
   useEffect(() => {
@@ -19,13 +31,15 @@ const LiveStopwatch = ({ startTime }) => {
 
     const update = () => {
       const diffMs = Date.now() - start;
-      if (diffMs < 0) { setElapsed('00:00:00'); return; }
+      if (diffMs < 0) {
+        setElapsed('00:00:00');
+        return;
+      }
       const t = Math.floor(diffMs / 1000);
-      const h = Math.floor(t / 3600);
-      const m = Math.floor((t % 3600) / 60);
-      const s = t % 60;
-      const p = (n) => String(n).padStart(2, '0');
-      setElapsed(`${p(h)}:${p(m)}:${p(s)}`);
+      const h = String(Math.floor(t / 3600)).padStart(2, '0');
+      const m = String(Math.floor((t % 3600) / 60)).padStart(2, '0');
+      const s = String(t % 60).padStart(2, '0');
+      setElapsed(`${h}:${m}:${s}`);
     };
 
     update();
@@ -33,9 +47,18 @@ const LiveStopwatch = ({ startTime }) => {
     return () => clearInterval(interval);
   }, [startTime]);
 
+  if (size === 'large') {
+    return (
+      <div className="flex items-center gap-2 px-4 py-2 bg-[#e7f0fa] text-[#0064e0] rounded-xl border border-[#dde5ec] shadow-2xs">
+        <Clock size={16} className="text-[#0064e0] animate-pulse" />
+        <span className="text-xl sm:text-2xl font-mono font-black tracking-widest">{elapsed}</span>
+      </div>
+    );
+  }
+
   return (
-    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-700 rounded-lg text-sm font-mono font-bold border border-blue-100">
-      <Clock size={14} className="text-blue-500 animate-pulse" />
+    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-[#e7f0fa] text-[#0064e0] rounded-xl text-xs font-mono font-black border border-[#dde5ec] tracking-wider">
+      <Clock size={13} className="text-[#0064e0] animate-pulse" />
       {elapsed}
     </span>
   );
@@ -43,56 +66,49 @@ const LiveStopwatch = ({ startTime }) => {
 
 const formatTime = (d) => {
   if (!d) return '—';
-  return new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return new Date(d).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 };
 
-const formatRelative = (d) => {
-  if (!d) return '';
-  const mins = Math.floor((Date.now() - new Date(d).getTime()) / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
-  return `${Math.floor(mins / 60)}h ago`;
-};
-
-// ─── Main Component ─────────────────────────────────────────────────────────
+// ─── Modern Minimal Live Working Monitor Page ─────────────────────────────────
 
 const CRALiveMonitor = () => {
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  const [tasks, setTasks] = useState([]);
+
+  const [workingTasks, setWorkingTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [socketConnected, setSocketConnected] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [viewMode, setViewMode] = useState('rows'); // 'rows' | 'grid'
+  const [search, setSearch] = useState('');
   const containerRef = useRef(null);
 
-  // ─── Fetch data ───────────────────────────────────────────────────────
+  // ─── Fetch Active Working Telemetry ─────────────────────────────────────────
   const fetchLiveData = useCallback(async () => {
     try {
-      const result = await getLiveCraData();
-      if (result.success) {
-        setTasks(result.data || []);
-        setLastUpdate(new Date());
-        setError(null);
-      }
+      const res = await getAllActivities({ status: 'IN_PROGRESS', limit: 100 });
+      setWorkingTasks(res.data || []);
+      setLastUpdate(new Date());
+      setError(null);
     } catch (err) {
-      console.error('Failed to fetch live CRA data:', err);
-      setError('Failed to load live data');
+      console.error('Failed to fetch live working CRA data:', err);
+      setError('Failed to fetch live working telemetry');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Initial load + 30s polling fallback
+  // Initial load + 10s auto-refresh fallback
   useEffect(() => {
     if (authLoading) return;
     fetchLiveData();
-    const interval = setInterval(fetchLiveData, 30000);
+    const interval = setInterval(fetchLiveData, 10000);
     return () => clearInterval(interval);
   }, [fetchLiveData, authLoading]);
 
-  // ─── Socket.IO ────────────────────────────────────────────────────────
+  // ─── Socket.IO Real-Time Event Sync ─────────────────────────────────────────
   useEffect(() => {
     if (authLoading) return;
     const socket = connectSocket();
@@ -106,8 +122,9 @@ const CRALiveMonitor = () => {
     socket.on('disconnect', onDisconnect);
     socket.on('cra_started', onRefresh);
     socket.on('cra_finished', onRefresh);
+    socket.on('cra_created', onRefresh);
     socket.on('cra_approved', onRefresh);
-    socket.on('cra_auto_started', onRefresh);
+    socket.on('cra_rejected', onRefresh);
     if (socket.connected) setSocketConnected(true);
 
     return () => {
@@ -115,12 +132,13 @@ const CRALiveMonitor = () => {
       socket.off('disconnect', onDisconnect);
       socket.off('cra_started', onRefresh);
       socket.off('cra_finished', onRefresh);
+      socket.off('cra_created', onRefresh);
       socket.off('cra_approved', onRefresh);
-      socket.off('cra_auto_started', onRefresh);
+      socket.off('cra_rejected', onRefresh);
     };
   }, [fetchLiveData, authLoading]);
 
-  // ─── Fullscreen API ───────────────────────────────────────────────────
+  // ─── Fullscreen API ──────────────────────────────────────────────────────────
   const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
       containerRef.current?.requestFullscreen?.().catch(() => {});
@@ -135,25 +153,35 @@ const CRALiveMonitor = () => {
     return () => document.removeEventListener('fullscreenchange', handler);
   }, []);
 
-  // ─── Auth guard ───────────────────────────────────────────────────────
+  // Filter tasks by search
+  const filteredTasks = workingTasks.filter((task) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    const matchName = (task.employee_name || '').toLowerCase().includes(q);
+    const matchTicket = (task.ticket_reference || '').toLowerCase().includes(q);
+    const matchDesc = (task.description || '').toLowerCase().includes(q);
+    return matchName || matchTicket || matchDesc;
+  });
+
+  // Auth guard
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent" />
+      <div className="min-h-screen bg-[#f1f5f8] flex items-center justify-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-4 border-[#0064e0] border-t-transparent" />
       </div>
     );
   }
 
   if (!user || (user.role !== 'manager' && user.role !== 'admin')) {
     return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white rounded-3xl border border-slate-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-8 text-center">
-          <AlertCircle size={48} className="text-rose-500 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Access Denied</h2>
-          <p className="text-slate-500 mb-6">Only managers or administrators can access the CRA Live Monitor.</p>
+      <div className="min-h-screen bg-[#f1f5f8] flex items-center justify-center p-6 text-[#1c2b33]">
+        <div className="max-w-md w-full bg-white rounded-2xl border border-[#dde5ec] shadow-2xl p-8 text-center">
+          <AlertCircle size={48} className="text-rose-600 mx-auto mb-4" />
+          <h2 className="text-xl font-heading font-black mb-2">Access Denied</h2>
+          <p className="text-xs text-[#5f7380] mb-6 font-semibold">Only managers or administrators can access the CRA Live Monitor.</p>
           <button
             onClick={() => navigate('/dashboard')}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all shadow-md shadow-blue-500/10"
+            className="w-full py-3 bg-[#0064e0] hover:bg-[#004fb3] text-white font-bold rounded-xl transition-all shadow-electric-glow cursor-pointer"
           >
             Go to Dashboard
           </button>
@@ -162,182 +190,293 @@ const CRALiveMonitor = () => {
     );
   }
 
-  // ─── Render ───────────────────────────────────────────────────────────
   return (
-    <div ref={containerRef} className="min-h-screen bg-slate-50 text-slate-800 flex flex-col">
+    <div ref={containerRef} className="min-h-screen bg-[#f1f5f8] text-[#1c2b33] flex flex-col font-sans">
 
-      {/* ─── Top bar ──────────────────────────────────────────────────── */}
-      <div className="sticky top-0 z-50 bg-white border-b border-slate-200/60 shadow-sm px-6 py-4">
-        <div className="max-w-[1600px] mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          {/* Left side */}
+      {/* ─── Top Telemetry Console Bar ────────────────────────────────────────── */}
+      <div className="sticky top-0 z-50 bg-[#1c2b33] text-white shadow-2xl border-b border-slate-700 px-6 py-4">
+        <div className="max-w-[1800px] mx-auto flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          
+          {/* Brand & Live Active Count */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center">
-              <Activity size={20} className="text-blue-600" />
+            <div className="w-10 h-10 rounded-xl bg-[#0064e0] flex items-center justify-center shadow-electric-glow">
+              <Radio size={22} className="text-white animate-pulse" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-slate-800 tracking-tight">CRA Live Monitor</h1>
-              <p className="text-xs text-slate-500 font-medium">Real-time active employee tasks</p>
+              <div className="flex items-center gap-2.5">
+                <h1 className="text-lg font-heading font-black text-white tracking-tight">
+                  WinSAP Live Working Monitor
+                </h1>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  {workingTasks.length} Working Now
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 font-medium">Real-Time Employee Activity Telemetry</p>
             </div>
           </div>
 
-          {/* Right side */}
+          {/* Controls & Indicators */}
           <div className="flex items-center gap-3">
-            {/* Connection indicator */}
-            <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold border ${
-              socketConnected
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : 'bg-rose-50 text-rose-700 border-rose-200'
-            }`}>
-              <span className={`w-2 h-2 rounded-full ${socketConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-              {socketConnected ? 'Live Connected' : 'Disconnected'}
+            {/* Search Input */}
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search working employee or ticket..."
+                className="pl-8 pr-3 py-1.5 text-xs bg-slate-800 border border-slate-700 text-white placeholder-slate-400 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0064e0] w-48 sm:w-64 font-medium"
+              />
             </div>
 
-            {/* Last update */}
-            {lastUpdate && (
-              <span className="text-xs text-slate-400 font-medium hidden sm:inline">
-                Last update: {lastUpdate.toLocaleTimeString('fr-FR')}
-              </span>
-            )}
+            {/* View Mode Toggle */}
+            <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-xl border border-slate-700">
+              <button
+                onClick={() => setViewMode('rows')}
+                className={`p-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  viewMode === 'rows' ? 'bg-[#0064e0] text-white' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Large Rows View"
+              >
+                <TableIcon size={14} />
+              </button>
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                  viewMode === 'grid' ? 'bg-[#0064e0] text-white' : 'text-slate-400 hover:text-white'
+                }`}
+                title="Card Grid View"
+              >
+                <LayoutGrid size={14} />
+              </button>
+            </div>
 
-            {/* Refresh */}
+            {/* Socket connection indicator */}
+            <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border ${
+              socketConnected
+                ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
+                : 'bg-rose-950/80 text-rose-300 border-rose-500/40'
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${socketConnected ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`} />
+              {socketConnected ? 'Live Sync' : 'Offline'}
+            </div>
+
+            {/* Manual Refresh */}
             <button
               onClick={fetchLiveData}
-              className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200/80 active:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl border border-slate-200/60 transition-all"
-              title="Refresh now"
+              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 transition-colors cursor-pointer"
+              title="Refresh telemetry"
             >
               <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-              Refresh
             </button>
 
-            {/* Fullscreen toggle */}
+            {/* Fullscreen button */}
             <button
               onClick={toggleFullscreen}
-              className="inline-flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-blue-500/10"
-              title={isFullscreen ? 'Exit Full Screen' : 'Full Screen'}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#0064e0] hover:bg-[#004fb3] text-white text-xs font-bold rounded-xl transition-all shadow-electric-glow cursor-pointer"
+              title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
             >
               {isFullscreen ? <Minimize size={14} /> : <Maximize size={14} />}
-              {isFullscreen ? 'Exit Fullscreen' : '⛶ Full Screen'}
+              {isFullscreen ? 'Exit' : 'Fullscreen'}
+            </button>
+
+            {/* Close tab button */}
+            <button
+              onClick={() => window.close()}
+              className="p-2 bg-slate-800 hover:bg-rose-600 text-slate-300 hover:text-white rounded-xl border border-slate-700 transition-colors cursor-pointer"
+              title="Close Monitor"
+            >
+              <X size={16} />
             </button>
           </div>
         </div>
       </div>
 
-      {/* ─── Content ──────────────────────────────────────────────────── */}
-      <div className="flex-1 max-w-[1600px] w-full mx-auto px-6 py-6 flex flex-col">
+      {/* ─── Main Monitoring Body ─────────────────────────────────────────────── */}
+      <div className="flex-1 max-w-[1800px] w-full mx-auto px-6 py-8 flex flex-col">
 
-        {/* Active count bar */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
-            <h2 className="text-sm font-bold text-slate-500 uppercase tracking-wider">
-              In Progress
-            </h2>
-            <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-xs font-bold border border-blue-200/40">
-              {tasks.length}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Play size={14} className="text-blue-500" />
-            <span className="text-xs font-medium text-slate-500">
-              {tasks.length === 0
-                ? 'No active tasks'
-                : `${tasks.length} employee${tasks.length !== 1 ? 's' : ''} working`}
-            </span>
-          </div>
-        </div>
-
-        {/* Error */}
+        {/* Error notification */}
         {error && (
-          <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 flex items-center gap-3 text-rose-700 text-sm mb-4">
+          <div className="bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 flex items-center gap-3 text-rose-700 text-xs font-bold mb-6">
             <AlertCircle size={16} />
             {error}
-            <button onClick={fetchLiveData} className="ml-auto underline text-rose-800 hover:text-rose-600 text-xs font-semibold">Retry</button>
+            <button onClick={fetchLiveData} className="ml-auto underline hover:text-rose-900 cursor-pointer">Retry</button>
           </div>
         )}
 
-        {/* Loading */}
+        {/* Loading Spinner */}
         {loading ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="animate-spin rounded-full h-10 w-10 border-4 border-blue-500 border-t-transparent" />
+          <div className="flex-1 flex flex-col items-center justify-center py-20">
+            <Clock className="w-10 h-10 text-[#0064e0] animate-spin mb-3" />
+            <p className="text-xs font-bold text-[#5f7380] animate-pulse">Connecting to live employee telemetry...</p>
           </div>
-        ) : tasks.length === 0 ? (
-          /* Empty state matching main application */
-          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-12 flex-1 flex flex-col items-center justify-center text-center">
-            <div className="w-16 h-16 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center mb-4">
-              <Activity size={28} className="text-slate-400" />
+        ) : filteredTasks.length === 0 ? (
+          /* ─── Modern Minimal Empty State ─────────────────────────────────────── */
+          <div className="flex-1 bg-white rounded-3xl border border-[#dde5ec] shadow-premium-card p-12 flex flex-col items-center justify-center text-center my-auto min-h-[450px]">
+            <div className="relative mb-6">
+              <div className="w-20 h-20 rounded-3xl bg-[#e7f0fa] border border-[#dde5ec] flex items-center justify-center text-[#0064e0] shadow-electric-glow">
+                <Radio size={36} className="animate-pulse" />
+              </div>
+              <div className="absolute -top-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full border-2 border-white animate-ping" />
             </div>
-            <h3 className="text-lg font-semibold text-slate-800 mb-1">No Active Tasks</h3>
-            <p className="text-sm text-slate-500 max-w-sm">Tasks will appear here in real-time when employees start working.</p>
+
+            <h2 className="text-xl sm:text-2xl font-heading font-black text-[#1c2b33] tracking-tight">
+              No employees are currently working
+            </h2>
+            <p className="text-xs sm:text-sm text-[#5f7380] mt-2 max-w-md font-semibold leading-relaxed">
+              Telemetry active. The monitor is listening for real-time task activity and will update automatically as soon as an employee starts a task.
+            </p>
+
+            <div className="mt-8 inline-flex items-center gap-2 px-4 py-2 bg-[#f1f5f8] rounded-xl border border-[#dde5ec] text-xs font-bold text-[#5f7380]">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              Listening via Socket.IO WebSocket Stream
+            </div>
+          </div>
+        ) : viewMode === 'rows' ? (
+          /* ─── Large Modern Employee Monitoring Rows ───────────────────────────── */
+          <div className="space-y-4">
+            {filteredTasks.map((item, index) => {
+              const initials = (item.employee_name || 'E')
+                .split(' ')
+                .map(n => n[0])
+                .join('')
+                .toUpperCase()
+                .slice(0, 2);
+
+              return (
+                <div
+                  key={item.id}
+                  className="bg-white rounded-2xl p-6 border border-[#dde5ec] shadow-premium-sm hover:shadow-blue-glow hover:border-[#0082fb]/50 transition-all duration-200 animate-fade-in flex flex-col lg:flex-row lg:items-center justify-between gap-6"
+                  style={{ animationDelay: `${index * 50}ms` }}
+                >
+                  {/* Left: Employee Avatar & Name */}
+                  <div className="flex items-center gap-4 min-w-[240px]">
+                    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#1c2b33] to-[#0064e0] text-white flex items-center justify-center font-heading font-black text-lg shadow-electric-glow flex-shrink-0">
+                      {initials}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-lg font-heading font-black text-[#1c2b33] uppercase tracking-tight">
+                          {item.employee_name}
+                        </h3>
+                      </div>
+                      {item.matricule && (
+                        <p className="text-xs font-mono font-bold text-[#5f7380] mt-0.5">
+                          Matricule: {item.matricule}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Middle: Current Task & Ticket */}
+                  <div className="flex-1 min-w-0 space-y-1.5 border-l-0 lg:border-l border-[#dde5ec] lg:pl-6">
+                    <div className="flex items-center gap-2">
+                      {item.ticket_reference && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-[#e7f0fa] text-[#0064e0] rounded-lg text-xs font-mono font-bold border border-[#dde5ec]">
+                          <Hash size={11} />
+                          {item.ticket_reference}
+                        </span>
+                      )}
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#5f7380]">
+                        Started at {formatTime(item.start_time)}
+                      </span>
+                    </div>
+
+                    <p className="text-base font-semibold text-[#1c2b33] leading-snug truncate">
+                      {item.description || 'Task in progress'}
+                    </p>
+                  </div>
+
+                  {/* Right: Live Stopwatch & Status */}
+                  <div className="flex items-center gap-4 flex-shrink-0 border-l-0 lg:border-l border-[#dde5ec] lg:pl-6 justify-between sm:justify-end">
+                    <LiveStopwatch startTime={item.start_time} size="large" />
+
+                    <div className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-black bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-xs shadow-emerald-400" />
+                      WORKING
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : (
-          /* Table matching Main Table of CRA page */
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden flex-1 flex flex-col">
-            <div className="overflow-x-auto flex-1">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-slate-50/80 border-b border-slate-100">
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Employee</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Reference</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Description</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Start Time</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Current Duration</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Last Update</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {tasks.map((task) => (
-                    <tr key={task.id} className="hover:bg-slate-50/50 transition-colors">
-                      {/* Employee */}
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm">
-                            {task.employee_name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '?'}
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold text-slate-800">{task.employee_name || 'Unknown'}</p>
-                            {task.matricule && <p className="text-xs text-slate-400 font-mono">{task.matricule}</p>}
-                          </div>
+          /* ─── Card Grid View ────────────────────────────────────────────────── */
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredTasks.map((item, index) => {
+              const initials = (item.employee_name || 'E')
+                .split(' ')
+                .map(n => n[0])
+                .join('')
+                .toUpperCase()
+                .slice(0, 2);
+
+              return (
+                <div
+                  key={item.id}
+                  className="bg-white rounded-2xl p-6 border border-[#dde5ec] shadow-premium-sm hover:shadow-blue-glow hover:border-[#0082fb]/50 transition-all duration-200 animate-fade-in flex flex-col justify-between"
+                  style={{ animationDelay: `${index * 50}ms` }}
+                >
+                  <div>
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#dde5ec]">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#1c2b33] to-[#0064e0] text-white flex items-center justify-center font-heading font-black text-base shadow-electric-glow">
+                          {initials}
                         </div>
-                      </td>
-                      {/* Reference */}
-                      <td className="px-6 py-4">
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-700 rounded-lg text-xs font-mono font-bold border border-slate-200/40">
-                          {task.ticket_reference || '—'}
+                        <div>
+                          <h3 className="font-heading font-black text-base text-[#1c2b33] uppercase">
+                            {item.employee_name}
+                          </h3>
+                          {item.matricule && (
+                            <p className="text-xs font-mono font-bold text-[#5f7380]">{item.matricule}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        WORKING
+                      </div>
+                    </div>
+
+                    {/* Task Description */}
+                    <div className="mb-4">
+                      {item.ticket_reference && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-[#e7f0fa] text-[#0064e0] rounded-lg text-xs font-mono font-bold border border-[#dde5ec] mb-2">
+                          <Hash size={11} />
+                          {item.ticket_reference}
                         </span>
-                      </td>
-                      {/* Description */}
-                      <td className="px-6 py-4">
-                        <p className="text-sm text-slate-600 max-w-md truncate" title={task.description}>
-                          {task.description || '—'}
-                        </p>
-                      </td>
-                      {/* Start Time */}
-                      <td className="px-6 py-4 text-sm text-slate-600 font-mono">
-                        {formatTime(task.start_time)}
-                      </td>
-                      {/* Current Duration */}
-                      <td className="px-6 py-4">
-                        <LiveStopwatch startTime={task.start_time} />
-                      </td>
-                      {/* Last update */}
-                      <td className="px-6 py-4 text-xs text-slate-400 font-medium">
-                        {formatRelative(task.updated_at || task.start_time)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      )}
+                      <p className="text-sm font-semibold text-[#1c2b33] leading-snug line-clamp-3">
+                        {item.description || 'Task in progress'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Live Timer Box */}
+                  <div className="bg-[#f1f5f8] rounded-xl p-4 border border-[#dde5ec] flex items-center justify-between mt-2">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-[#5f7380] block">Started</span>
+                      <span className="text-xs font-mono font-bold text-[#1c2b33]">{formatTime(item.start_time)}</span>
+                    </div>
+                    <LiveStopwatch startTime={item.start_time} />
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* ─── Footer ───────────────────────────────────────────────────── */}
-      <div className="border-t border-slate-200/60 bg-white">
-        <div className="max-w-[1600px] mx-auto px-6 py-3 flex items-center justify-between text-[11px] font-medium text-slate-400">
-          <span>AbsenceFlow — CRA Live Monitor</span>
-          <span>Auto-refresh every 30s • Socket.IO real-time</span>
+      {/* ─── Minimal Console Footer ───────────────────────────────────────────── */}
+      <div className="border-t border-[#dde5ec] bg-white text-[#5f7380] text-xs font-semibold px-6 py-3.5 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <ShieldCheck size={14} className="text-[#0064e0]" />
+          <span>WinSAP CRA Telemetry Monitor • Read-Only Console</span>
         </div>
+        <span>Auto-sync: WebSocket Stream • Timer linked to DB timestamp</span>
       </div>
     </div>
   );

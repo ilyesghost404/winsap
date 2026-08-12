@@ -12,7 +12,10 @@ const {
     getAttendanceMatrix,
     getEmployeeYearlyReport,
     exportEmployeeYearlyExcel,
-    exportEmployeeYearlyPdf
+    exportEmployeeYearlyPdf,
+    getYearlyTeamReport,
+    exportYearlyTeamExcel,
+    exportYearlyTeamPdf
 } = require("../controllers/reportController");
 const { requireAuth, authorizeRoles } = require("../middleware/authMiddleware");
 
@@ -23,6 +26,11 @@ router.use(requireAuth, authorizeRoles("manager"));
 router.get("/employees/:employeeId/year/:year", getEmployeeYearlyReport);
 router.get("/employees/:employeeId/year/:year/excel", exportEmployeeYearlyExcel);
 router.get("/employees/:employeeId/year/:year/pdf", exportEmployeeYearlyPdf);
+
+// Full-year team CRA activity reports
+router.get("/team/year/:year", getYearlyTeamReport);
+router.get("/team/year/:year/excel", exportYearlyTeamExcel);
+router.get("/team/year/:year/pdf", exportYearlyTeamPdf);
 
 // General manager report views
 router.get("/statistics", getReportStats);

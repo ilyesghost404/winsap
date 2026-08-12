@@ -55,10 +55,26 @@ async function getHolidays(startDate, endDate) {
     const startStr = toDateString(startDate);
     const endStr = toDateString(endDate);
     const result = await db.query(
-        "SELECT holiday_date FROM holidays WHERE holiday_date BETWEEN $1 AND $2",
+        "SELECT holiday_date, COALESCE(end_date, holiday_date) AS end_date FROM holidays WHERE holiday_date <= $2 AND COALESCE(end_date, holiday_date) >= $1",
         [startStr, endStr]
     );
-    return result.rows.map(row => row.holiday_date);
+
+    const holidayDates = [];
+    const rStart = parseLocalDate(startStr);
+    const rEnd = parseLocalDate(endStr);
+
+    for (const row of result.rows) {
+        const hStart = parseLocalDate(row.holiday_date);
+        const hEnd = parseLocalDate(row.end_date);
+        const curStart = new Date(Math.max(hStart.getTime(), rStart.getTime()));
+        const curEnd = new Date(Math.min(hEnd.getTime(), rEnd.getTime()));
+
+        for (let d = new Date(curStart); d <= curEnd; d.setDate(d.getDate() + 1)) {
+            holidayDates.push(toDateString(d));
+        }
+    }
+
+    return holidayDates;
 }
 
 async function getValidatedAbsenceDays(employeeId, startDate, endDate) {

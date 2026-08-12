@@ -29,3 +29,8 @@ export const registerFace = async (id, images) => {
   const response = await api.post(`/employees/${id}/register-face`, { images });
   return response.data;
 };
+
+export const getUnlinkedEmployees = async () => {
+  const response = await api.get('/employees/unlinked');
+  return response.data.data;
+};

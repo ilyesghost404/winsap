@@ -147,14 +147,39 @@ const createAbsence = async (req, res) => {
 const updateAbsence = async (req, res) => {
     try {
         const { id } = req.params;
-        const { employee_id, type, start_date, end_date } = req.body;
-        
+        const existing = await Absence.getById(id);
+
+        if (!existing) {
+            return res.status(404).json({ success: false, message: "Absence not found" });
+        }
+
+        // Ownership and permission check
+        if (req.user.role === "employee") {
+            if (existing.employee_id !== req.user.employee_id) {
+                return res.status(403).json({ success: false, message: "Access forbidden: cannot edit another employee's request" });
+            }
+            const isPending = !existing.status || existing.status === "Pending" || existing.status === "PENDING";
+            if (!isPending) {
+                return res.status(400).json({ success: false, message: "Cannot edit a leave request that has already been processed (Approved or Rejected)" });
+            }
+        }
+
+        let { employee_id, type, start_date, end_date } = req.body;
+        if (req.user.role === "employee") {
+            employee_id = req.user.employee_id;
+        }
+
         if (!employee_id || !type || !start_date || !end_date) {
             return res.status(400).json({ 
                 success: false, 
                 message: "Employee ID, type, start date, and end date are required" 
             });
         }
+
+        const updateData = {
+            ...req.body,
+            employee_id
+        };
 
         // Holiday validation
         const { chargeableDays, holidayCount } = await calculateAbsenceWorkingDays(start_date, end_date);
@@ -175,11 +200,7 @@ const updateAbsence = async (req, res) => {
             });
         }
         
-        const absence = await Absence.update(id, req.body);
-        
-        if (!absence) {
-            return res.status(404).json({ success: false, message: "Absence not found" });
-        }
+        const absence = await Absence.update(id, updateData);
 
         const responseMessage = holidayCount > 0
             ? `Absence updated. Note: ${holidayCount} holiday day(s) in this period are excluded from the count. Chargeable days: ${chargeableDays}.`
@@ -208,11 +229,24 @@ const updateAbsence = async (req, res) => {
 const deleteAbsence = async (req, res) => {
     try {
         const { id } = req.params;
-        const absence = await Absence.delete(id);
-        
-        if (!absence) {
+        const existing = await Absence.getById(id);
+
+        if (!existing) {
             return res.status(404).json({ success: false, message: "Absence not found" });
         }
+
+        // Ownership and permission check
+        if (req.user.role === "employee") {
+            if (existing.employee_id !== req.user.employee_id) {
+                return res.status(403).json({ success: false, message: "Access forbidden: cannot delete another employee's request" });
+            }
+            const isPending = !existing.status || existing.status === "Pending" || existing.status === "PENDING";
+            if (!isPending) {
+                return res.status(400).json({ success: false, message: "Cannot cancel a leave request that has already been processed (Approved or Rejected)" });
+            }
+        }
+
+        const absence = await Absence.delete(id);
 
         // Refund leave balance if a validated request is deleted
         if (absence.status === 'Validated' && (absence.type === 'Vacation' || absence.type === 'Sick Leave')) {
@@ -256,14 +290,17 @@ const validateAbsence = async (req, res) => {
 
         // Validate and deduct leave balance for Vacation and Sick Leave
         if (existing.type === "Vacation" || existing.type === "Sick Leave") {
-            const balance = await LeaveBalance.getByEmployeeId(existing.employee_id);
+            let balance = await LeaveBalance.getByEmployeeId(existing.employee_id);
+            if (!balance) {
+                balance = await LeaveBalance.initialize(existing.employee_id);
+            }
             const typeKey = existing.type === "Vacation" ? "paid" : "sick";
             const available = balance ? (typeKey === "paid" ? parseFloat(balance.paid_leave_balance) : parseFloat(balance.sick_leave_balance)) : 0;
             
             if (chargeableDays > available) {
                 return res.status(400).json({ 
                     success: false, 
-                    message: "Insufficient leave balance", 
+                    message: `Insufficient leave balance (${available} days available, ${chargeableDays} days requested)`, 
                     reason: "INSUFFICIENT_BALANCE" 
                 });
             }

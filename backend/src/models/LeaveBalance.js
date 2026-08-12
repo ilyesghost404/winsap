@@ -12,7 +12,7 @@ class LeaveBalance {
   static async initialize(employeeId) {
     const result = await db.query(
       `INSERT INTO leave_balances (employee_id, paid_leave_balance, sick_leave_balance, last_accrual_date)
-       VALUES ($1, 0.00, 5.00, CURRENT_DATE)
+       VALUES ($1, 22.00, 5.00, CURRENT_DATE)
        ON CONFLICT (employee_id) DO NOTHING
        RETURNING *`,
       [employeeId]

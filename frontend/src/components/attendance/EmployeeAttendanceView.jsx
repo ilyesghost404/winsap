@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
-import { 
+import {
   LogIn, LogOut, Clock, CalendarDays, CheckCircle2, AlertCircle, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import Card from '../Card';
 import StatsCard from '../StatsCard';
-import Table from '../Table';
 import Button from '../Button';
 import LoadingSpinner from '../LoadingSpinner';
+import StatusBadge from '../StatusBadge';
 import { checkIn, checkOut } from '../../services/presenceService';
 import { getAttendance } from '../../services/attendanceService';
 import { useAuth } from '../../context/AuthContext';
@@ -20,7 +20,6 @@ const EmployeeAttendanceView = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
   const [verifyModalOpen, setVerifyModalOpen] = useState(false);
   const [verifyType, setVerifyType] = useState('check-in');
 
@@ -35,8 +34,8 @@ const EmployeeAttendanceView = () => {
       );
       setHistory(data || []);
     } catch (error) {
-      console.error("Error fetching attendance history:", error);
-      toast.error("Failed to load attendance history");
+      console.error('Error fetching attendance history:', error);
+      toast.error('Failed to load attendance history');
     } finally {
       setLoading(false);
     }
@@ -60,207 +59,231 @@ const EmployeeAttendanceView = () => {
     fetchHistory();
   };
 
+  // Month navigation
+  const prevMonth = () => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+  };
+
+  const nextMonth = () => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+  };
+
+  // Find today's attendance record
   const todayStr = new Date().toISOString().split('T')[0];
-  const todayRecord = history.find(r => {
-    const dStr = r.date.includes('T') ? r.date.split('T')[0] : r.date;
-    return dStr === todayStr;
+  const todayRecord = history.find((h) => {
+    const d = h.date ? h.date.split('T')[0] : '';
+    return d === todayStr;
   });
 
-  const getTodayStatus = () => {
-    if (!todayRecord) {
-      return { label: "Not Checked In", color: "text-slate-500", bg: "bg-slate-100", dotColor: "bg-slate-400" };
+  const hasCheckedIn = !!todayRecord?.check_in;
+  const hasCheckedOut = !!todayRecord?.check_out;
+
+  const formatTime = (timeStr) => {
+    if (!timeStr) return '—';
+    try {
+      if (timeStr.includes(':')) {
+        const [hours, minutes] = timeStr.split(':');
+        return `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+      }
+      return new Date(timeStr).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return timeStr;
     }
-    if (todayRecord.check_out) {
-      return { label: "Completed", color: "text-emerald-700", bg: "bg-emerald-50", dotColor: "bg-emerald-500" };
-    }
-    return { label: "Checked In", color: "text-blue-700", bg: "bg-blue-50", dotColor: "bg-blue-500" };
   };
 
-  const statusInfo = getTodayStatus();
-
-  // Statistics calculation for the current month
-  const stats = {
-    present: history.filter(r => r.status === 'Present').length,
-    late: history.filter(r => r.status === 'Late').length,
-    absent: history.filter(r => r.status === 'Absent').length,
-  };
-
-  const formatTime = (time) => {
-    if (!time) return "—";
-    return time.slice(0, 5);
-  };
-
-  const goToPreviousMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
-  const goToNextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
-  const goToToday = () => setCurrentDate(new Date());
-
-  const columns = [
-    {
-      header: 'Date',
-      render: (row) => {
-        const d = new Date(row.date);
-        return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-      }
-    },
-    {
-      header: 'Check In',
-      render: (row) => (
-        row.check_in ? (
-          <span className="font-mono bg-emerald-50 text-emerald-700 px-2 py-1 rounded-lg text-sm">
-            {formatTime(row.check_in)}
-          </span>
-        ) : "—"
-      )
-    },
-    {
-      header: 'Check Out',
-      render: (row) => (
-        row.check_out ? (
-          <span className="font-mono bg-blue-50 text-blue-700 px-2 py-1 rounded-lg text-sm">
-            {formatTime(row.check_out)}
-          </span>
-        ) : "—"
-      )
-    },
-    {
-      header: 'Status',
-      render: (row) => {
-        const statusColors = {
-          Present: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-          Late: 'bg-amber-100 text-amber-700 border-amber-200',
-          Absent: 'bg-red-100 text-red-700 border-red-200'
-        };
-        return (
-          <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${statusColors[row.status] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-            {row.status}
-          </span>
-        );
-      }
-    },
-    {
-      header: 'justification',
-      render: (row) => {
-        if (row.validation_status === 'Pending') {
-          return <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded border border-amber-100 font-semibold">Justification Pending</span>;
-        }
-        if (row.validation_status === 'Justified') {
-          return <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-100 font-semibold" title={row.justification_reason}>Approved: {row.justification_reason}</span>;
-        }
-        if (row.validation_status === 'Rejected') {
-          return <span className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded border border-red-100 font-semibold">Rejected</span>;
-        }
-        return <span className="text-slate-400">—</span>;
-      }
-    }
-  ];
+  const totalDays = history.length;
+  const presentDays = history.filter((h) => !!h.check_in).length;
+  const completedDays = history.filter((h) => !!h.check_in && !!h.check_out).length;
 
   return (
-    <div className="space-y-8">
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-800 tracking-tight">My Attendance</h1>
-          <p className="text-slate-500 font-medium mt-1">Track your check-ins, check-outs, and anomalies</p>
+    <div className="space-y-6">
+      {/* ── Hero Banner ────────────────────────────────────────────── */}
+      <div className="rounded-3xl bg-gradient-to-r from-[#1c2b33] to-[#0064e0] p-6 sm:p-8 text-white shadow-electric-glow border border-blue-400/30 relative overflow-hidden">
+        <div className="relative z-10">
+          <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-widest text-blue-100 font-heading mb-1">
+            <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse shadow-xs" />
+            <span>Daily Presence Tracker</span>
+          </div>
+          <h1 className="text-2xl sm:text-4xl font-heading font-black tracking-tight text-white">
+            My Attendance
+          </h1>
+          <p className="text-blue-100 text-xs sm:text-sm mt-1 max-w-xl">
+            Record your daily presence check-ins, checkouts, and review monthly work logs.
+          </p>
         </div>
+        <div className="absolute -right-20 -top-20 w-80 h-80 bg-white/10 rounded-full blur-3xl pointer-events-none" />
       </div>
 
-      {/* Dashboard Actions and Status Card */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
-        {/* Today's Action Bubble */}
-        <Card noPadding className="lg:col-span-5 flex flex-col justify-between border-slate-200 shadow-sm">
-          <div className="p-5 sm:p-6 flex-1 flex flex-col justify-between">
-            <div>
-              <h3 className="text-lg font-bold text-slate-800 mb-2 flex items-center gap-2">
-                <Clock className="text-blue-600" size={20} />
-                Today's Session
-              </h3>
-              <p className="text-slate-400 text-xs mb-6">
-                {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-              </p>
-
-              <div className="flex items-center justify-between mb-6 sm:mb-8 p-4 bg-slate-50 border border-slate-100 rounded-2xl">
-                <div className="flex items-center gap-3">
-                  <span className={`w-3 h-3 rounded-full ${statusInfo.dotColor} ${statusInfo.label === 'Checked In' ? 'animate-pulse' : ''}`} />
-                  <span className="font-bold text-slate-800">{statusInfo.label}</span>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-slate-400 font-medium">Logged Check-In</p>
-                  <p className="font-mono text-slate-800 font-bold">{todayRecord?.check_in ? formatTime(todayRecord.check_in) : '—'}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="w-full">
-              {!todayRecord?.check_in ? (
-                <Button
-                  onClick={handleCheckIn}
-                  disabled={actionLoading}
-                  variant="success"
-                  className="w-full justify-center py-3 font-bold rounded-xl transition-all shadow-md shadow-emerald-500/20 hover:shadow-emerald-500/35"
-                  icon={LogIn}
-                >
-                  {actionLoading ? 'Loading...' : 'Check In'}
-                </Button>
-              ) : !todayRecord.check_out ? (
-                <Button
-                  onClick={handleCheckOut}
-                  disabled={actionLoading}
-                  variant="primary"
-                  className="w-full justify-center py-3 font-bold rounded-xl transition-all shadow-md shadow-blue-500/20 hover:shadow-blue-500/35"
-                  icon={LogOut}
-                >
-                  {actionLoading ? 'Loading...' : 'Check Out'}
-                </Button>
-              ) : (
-                <div className="w-full flex items-center justify-center gap-2 p-3 bg-slate-100 text-slate-500 font-bold rounded-xl border border-slate-200 cursor-default">
-                  <CheckCircle2 size={16} />
-                  Shift Completed
-                </div>
+      {/* Today's Punch Card Banner */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0 border border-blue-100">
+            <Clock size={24} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-bold text-slate-900">Today's Presence Status</h3>
+              {hasCheckedIn && !hasCheckedOut && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
+                  Clocked In
+                </span>
               )}
             </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Check in:{' '}
+              <strong className="text-slate-800">{formatTime(todayRecord?.check_in)}</strong> · Check out:{' '}
+              <strong className="text-slate-800">{formatTime(todayRecord?.check_out)}</strong>
+            </p>
           </div>
-        </Card>
+        </div>
 
-        {/* Month Stats */}
-        <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-3 gap-6">
-          <StatsCard title="Present Days" value={stats.present} icon={CheckCircle2} colorClass="text-emerald-600" bgClass="bg-emerald-50" borderClass="border-t-emerald-500" />
-          <StatsCard title="Late Check-Ins" value={stats.late} icon={Clock} colorClass="text-amber-500" bgClass="bg-amber-50" borderClass="border-t-amber-500" />
-          <StatsCard title="Unexcused Absences" value={stats.absent} icon={AlertCircle} colorClass="text-rose-600" bgClass="bg-rose-50" borderClass="border-t-rose-500" />
+        <div className="flex items-center gap-3">
+          {!hasCheckedIn ? (
+            <Button icon={LogIn} onClick={handleCheckIn}>
+              Check In Today
+            </Button>
+          ) : !hasCheckedOut ? (
+            <Button variant="softBlue" icon={LogOut} onClick={handleCheckOut}>
+              Check Out Now
+            </Button>
+          ) : (
+            <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 bg-emerald-50 px-3.5 py-2 rounded-xl border border-emerald-200">
+              <CheckCircle2 size={16} />
+              <span>Full Day Completed</span>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* History List */}
-      <Card noPadding className="border-slate-200 shadow-sm">
-        <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <h2 className="text-xl font-bold text-slate-800">
-            History: {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-          </h2>
-          <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
-            <button onClick={goToPreviousMonth} className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition-all"><ChevronLeft size={20}/></button>
-            <button onClick={goToToday} className="px-3 py-1.5 text-sm font-bold rounded-lg hover:bg-white hover:shadow-sm text-slate-700 transition-all">Today</button>
-            <button onClick={goToNextMonth} className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition-all"><ChevronRight size={20}/></button>
-          </div>
-        </div>
+      {/* KPI Monthly Metrics */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatsCard
+          title="Days Logged"
+          value={totalDays}
+          subtitle="In selected month"
+          icon={CalendarDays}
+          colorClass="text-blue-600"
+          bgClass="bg-blue-50"
+        />
+        <StatsCard
+          title="Present Days"
+          value={presentDays}
+          subtitle="Checked in"
+          icon={CheckCircle2}
+          colorClass="text-emerald-600"
+          bgClass="bg-emerald-50"
+        />
+        <StatsCard
+          title="Completed Full Days"
+          value={completedDays}
+          subtitle="Both in & out"
+          icon={Clock}
+          colorClass="text-indigo-600"
+          bgClass="bg-indigo-50"
+        />
+      </div>
 
+      {/* Monthly Attendance Log Table */}
+      <Card
+        title={
+          <div className="flex items-center gap-3">
+            <span>
+              Attendance Log ·{' '}
+              {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+            </span>
+          </div>
+        }
+        actions={
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={prevMonth}
+              className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              title="Previous Month"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <button
+              onClick={nextMonth}
+              className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+              title="Next Month"
+            >
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        }
+      >
         {loading ? (
-          <div className="py-20 text-center">
-            <LoadingSpinner size="lg" />
-            <p className="text-slate-400 text-sm mt-4 font-semibold">Loading history...</p>
+          <div className="py-12 flex justify-center">
+            <LoadingSpinner size="md" text="Loading month logs..." />
           </div>
         ) : history.length === 0 ? (
-          <div className="py-20 text-center text-slate-400 font-semibold">
+          <div className="py-12 text-center text-slate-400 text-xs">
             No attendance records found for this month.
           </div>
         ) : (
-          <Table columns={columns} data={history} className="border-0 rounded-none" />
+          <div className="overflow-x-auto -mx-6 -my-6">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50/75 border-b border-slate-100">
+                <tr>
+                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Date
+                  </th>
+                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Check In
+                  </th>
+                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Check Out
+                  </th>
+                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {history.map((record, i) => {
+                  const checkInTime = record.check_in;
+                  const checkOutTime = record.check_out;
+                  const isComplete = checkInTime && checkOutTime;
+
+                  return (
+                    <tr key={i} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="px-6 py-3.5 text-xs font-semibold text-slate-900">
+                        {new Date(record.date).toLocaleDateString('en-US', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </td>
+                      <td className="px-6 py-3.5 text-xs font-mono text-slate-700">
+                        {formatTime(checkInTime)}
+                      </td>
+                      <td className="px-6 py-3.5 text-xs font-mono text-slate-700">
+                        {formatTime(checkOutTime)}
+                      </td>
+                      <td className="px-6 py-3.5">
+                        {isComplete ? (
+                          <StatusBadge status="completed" type="dot" />
+                        ) : checkInTime ? (
+                          <StatusBadge status="active" type="dot" />
+                        ) : (
+                          <StatusBadge status="absent" type="dot" />
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </Card>
 
+      {/* Biometric / Manual Verification Modal */}
       <AttendanceVerifyModal
         isOpen={verifyModalOpen}
         onClose={() => setVerifyModalOpen(false)}
         type={verifyType}
-        employeeId={employeeId}
         onSuccess={handleVerifySuccess}
       />
     </div>

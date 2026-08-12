@@ -24,3 +24,13 @@ export const activateAccount = async (token, password) => {
   const response = await api.post('/users/activate-account', { token, password });
   return response.data;
 };
+
+export const resendActivationEmail = async (userId) => {
+  const response = await api.post('/users/resend-activation', { userId });
+  return response.data;
+};
+
+export const toggleUserStatus = async (id, is_active) => {
+  const response = await api.patch(`/users/${id}/status`, { is_active });
+  return response.data;
+};

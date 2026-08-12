@@ -10,6 +10,7 @@ export const getMyActivities = async (params = {}) => {
   if (params.year) query.set("year", params.year);
   if (params.startDate) query.set("startDate", params.startDate);
   if (params.endDate) query.set("endDate", params.endDate);
+  if (params.search) query.set("search", params.search);
   const response = await api.get(`/cra/my-activities?${query.toString()}`);
   return response.data;
 };
@@ -77,9 +78,15 @@ export const rejectCraEntry = async (id) => {
   return response.data;
 };
 
-// Get stats
+// Get stats (count-based)
 export const getCraStats = async () => {
   const response = await api.get("/cra/stats");
+  return response.data.data;
+};
+
+// Get monthly stats (hours/days/productivity)
+export const getMonthlyStats = async () => {
+  const response = await api.get("/cra/monthly-stats");
   return response.data.data;
 };
 
@@ -87,5 +94,17 @@ export const getCraStats = async () => {
 export const getLiveCraData = async () => {
   const response = await api.get("/cra/live");
   return response.data;
+};
+
+// Manager Control Center stats & live feed
+export const getControlCenterData = async () => {
+  const response = await api.get("/cra/control-center");
+  return response.data.data;
+};
+
+// Read-only employee monitor summary profile
+export const getEmployeeMonitorSummary = async (employeeId) => {
+  const response = await api.get(`/cra/employee-summary/${employeeId}`);
+  return response.data.data;
 };
 

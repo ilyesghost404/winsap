@@ -1,30 +1,58 @@
 import EmptyState from './EmptyState';
 
-const Table = ({ columns, data, className = '', emptyMessage = 'No data available' }) => {
+const Table = ({
+  columns = [],
+  data = [],
+  className = '',
+  emptyMessage = 'No records found',
+  emptyDescription = 'There are no records matching your selected filters.',
+  onRowClick,
+  hoverable = true,
+  headerVariant = 'softBlue', // 'softBlue' | 'light' | 'white'
+}) => {
   if (!data || data.length === 0) {
-    return <EmptyState title={emptyMessage} />;
+    return <EmptyState title={emptyMessage} description={emptyDescription} />;
   }
 
   return (
-    <div className={`overflow-x-auto rounded-3xl border border-slate-100 bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] ${className}`}>
-      <table className="min-w-full divide-y divide-slate-100">
-        <thead className="bg-slate-50/50 backdrop-blur-xl sticky top-0 z-10">
+    <div className={`overflow-x-auto rounded-2xl border border-[#dde5ec] bg-white shadow-premium-sm ${className}`}>
+      <table className="min-w-full divide-y divide-[#e7f0fa] text-sm">
+        <thead
+          className={`sticky top-0 z-10 ${
+            headerVariant === 'light'
+              ? 'bg-[#f1f5f8] text-[#1c2b33] border-b border-[#dde5ec]'
+              : 'bg-[#f1f5f8] text-[#0064e0] border-b border-[#dde5ec]'
+          }`}
+        >
           <tr>
             {columns.map((column, index) => (
               <th
                 key={index}
-                className="px-4 sm:px-8 py-4 sm:py-5 text-left text-xs font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap"
+                className={`px-5 py-3.5 text-left text-[11px] font-heading font-extrabold uppercase tracking-wider whitespace-nowrap ${
+                  headerVariant === 'light' ? 'text-slate-600' : 'text-[#0064e0]'
+                } ${column.headerClassName || ''}`}
               >
                 {column.header}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-slate-50">
+        <tbody className="bg-white divide-y divide-[#e7f0fa]">
           {data.map((row, rowIndex) => (
-            <tr key={rowIndex} className="hover:bg-slate-50/60 transition-colors duration-200 group">
+            <tr
+              key={rowIndex}
+              onClick={() => onRowClick && onRowClick(row)}
+              className={`
+                transition-colors duration-150 group
+                ${hoverable ? 'hover:bg-[#e7f0fa]/60' : ''}
+                ${onRowClick ? 'cursor-pointer' : ''}
+              `}
+            >
               {columns.map((column, colIndex) => (
-                <td key={colIndex} className={`px-4 sm:px-8 py-4 sm:py-5 text-sm text-slate-700 ${column.cellClassName || 'whitespace-nowrap'} group-hover:text-slate-900`}>
+                <td
+                  key={colIndex}
+                  className={`px-5 py-3.5 text-slate-700 font-medium ${column.cellClassName || 'whitespace-nowrap'} group-hover:text-[#1c2b33]`}
+                >
                   {column.render ? column.render(row) : row[column.key]}
                 </td>
               ))}

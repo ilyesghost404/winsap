@@ -1,7 +1,11 @@
 import api from "./api";
 
 export const getHolidays = async (params = {}) => {
-  const response = await api.get("/holidays", { params });
+  let queryParams = params;
+  if (typeof params === 'number' || (typeof params === 'string' && /^\d{4}$/.test(params))) {
+    queryParams = { year: parseInt(params, 10) };
+  }
+  const response = await api.get("/holidays", { params: queryParams });
   return response.data;
 };
 

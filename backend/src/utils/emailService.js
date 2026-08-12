@@ -4,14 +4,32 @@ let transporter;
 
 const initTransporter = () => {
   if (process.env.EMAIL_HOST && process.env.EMAIL_USER) {
+    const port = parseInt(process.env.EMAIL_PORT || "465", 10);
+    const isSecure = port === 465;
+
     transporter = nodemailer.createTransport({
       host: process.env.EMAIL_HOST,
-      port: process.env.EMAIL_PORT || 587,
-      secure: false, // true for 465, false for other ports
+      port: port,
+      secure: isSecure, // true for port 465 (direct SSL/TLS)
+      family: 4,        // Force IPv4 to prevent 2-3 minute dual-stack IPv6 DNS connection timeouts
+      pool: true,       // Maintain persistent connection pool for instant email delivery
+      maxConnections: 5,
+      maxMessages: 100,
+      connectionTimeout: 10000, // 10s connection timeout
+      greetingTimeout: 5000,
+      socketTimeout: 15000,
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASSWORD,
       },
+    });
+
+    transporter.verify((err) => {
+      if (err) {
+        console.error("⚠️ SMTP Transporter Warning:", err.message);
+      } else {
+        console.log(`✉️ SMTP Transporter initialized on ${process.env.EMAIL_HOST}:${port} (IPv4 Pool Active)`);
+      }
     });
   } else {
     console.error("Gmail SMTP credentials are not configured in .env");
@@ -21,8 +39,11 @@ const initTransporter = () => {
 initTransporter();
 
 const sendEmail = async (to, subject, htmlContent) => {
+  const startTime = Date.now();
+  console.log(`[${new Date().toISOString()}] 📤 [Email Step 3] Email sending started to recipient: ${to}`);
+
   if (!transporter) {
-    console.error("Email service is not configured. Email not sent.");
+    console.error(`[${new Date().toISOString()}] ❌ Email service is not configured. Email to ${to} cancelled.`);
     return false;
   }
   
@@ -34,10 +55,13 @@ const sendEmail = async (to, subject, htmlContent) => {
       html: htmlContent,
     });
     
-    console.log(`Email successfully sent to ${to}. Message ID: ${info.messageId}`);
+    const duration = Date.now() - startTime;
+    console.log(`[${new Date().toISOString()}] 📥 [Email Step 4] Email provider accepted message. Message ID: ${info.messageId}`);
+    console.log(`[${new Date().toISOString()}] ✅ [Email Step 5] Email sending completed to ${to} in ${duration} ms.`);
     return true;
   } catch (error) {
-    console.error("Error sending email:", error);
+    const duration = Date.now() - startTime;
+    console.error(`[${new Date().toISOString()}] ❌ Error sending email to ${to} after ${duration} ms:`, error.message);
     return false;
   }
 };

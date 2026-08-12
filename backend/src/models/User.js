@@ -20,6 +20,7 @@ class User {
         u.is_active, 
         u.is_verified,
         u.account_status,
+        u.activated_at,
         u.created_at, 
         u.updated_at,
         u.locked_until,
@@ -96,6 +97,10 @@ class User {
     return result.rows[0];
   }
 
+  static async findByEmail(email) {
+    return this.getByUsernameOrEmail(email);
+  }
+
   static async getByUsernameOrEmail(value) {
     // We need the password_hash for login verification, so we select *
     const result = await db.query(`
@@ -157,12 +162,58 @@ class User {
     return result.rows[0];
   }
 
+  static async checkActivationToken(token) {
+    if (!token) return { status: 'invalid', message: 'Token is required' };
+
+    const result = await db.query(`
+      SELECT u.id, u.username, u.email, u.employee_id, u.account_status, u.is_verified, u.activation_token_expiry, u.activated_at
+      FROM users u
+      WHERE u.activation_token = $1
+    `, [token]);
+
+    if (result.rows.length === 0) {
+      return { status: 'invalid', message: 'Invalid activation link.' };
+    }
+
+    const user = result.rows[0];
+
+    if (user.account_status === 'Active' || (user.is_verified && user.activated_at)) {
+      return { status: 'already_activated', message: 'This account has already been activated.', user };
+    }
+
+    if (new Date(user.activation_token_expiry) <= new Date()) {
+      return { status: 'expired', message: 'Activation link has expired.', user };
+    }
+
+    return { status: 'valid', message: 'Token is valid', user };
+  }
+
   static async activateAccount(userId, passwordHash) {
     await db.query(`
       UPDATE users 
-      SET password_hash = $1, account_status = 'Active', is_verified = TRUE, activation_token = NULL, activation_token_expiry = NULL, activated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      SET password_hash = $1, account_status = 'Active', is_active = TRUE, is_verified = TRUE, activation_token = NULL, activation_token_expiry = NULL, activated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
       WHERE id = $2
     `, [passwordHash, userId]);
+  }
+
+  static async updateActivationToken(userId, token, expiry) {
+    const result = await db.query(`
+      UPDATE users
+      SET activation_token = $1, activation_token_expiry = $2, account_status = 'Pending Activation', updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+      RETURNING *
+    `, [token, expiry, userId]);
+    return result.rows[0];
+  }
+
+  static async setAccountStatus(userId, status, isActive) {
+    const result = await db.query(`
+      UPDATE users
+      SET account_status = $1, is_active = $2, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $3
+      RETURNING *
+    `, [status, isActive, userId]);
+    return result.rows[0];
   }
 
   static async delete(id) {

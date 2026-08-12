@@ -4,7 +4,9 @@
   "private": true,
   "description": "AbsenceFlow - Monorepo startup orchestrator",
   "scripts": {
-    "dev": "concurrently -k -p \"{name}\" -c \"cyan,green,yellow\" -n \"FRONTEND,BACKEND,AI-SERVICE\" \"npm run dev:frontend\" \"npm run dev:backend\" \"npm run dev:ai\"",
+    "free-ports": "node scripts/free-ports.js",
+    "predev": "node scripts/free-ports.js",
+    "dev": "concurrently --kill-others --kill-signal SIGTERM -p \"[{name}]\" -c \"cyan,green,yellow\" -n \"FRONTEND,BACKEND,AI-SERVICE\" \"npm run dev:frontend\" \"npm run dev:backend\" \"npm run dev:ai\"",
     "dev:frontend": "cd frontend && npm run dev",
     "dev:backend": "cd backend && npm run dev",
     "dev:ai": "cd backend && ./venv/bin/python local_ai_service.py",

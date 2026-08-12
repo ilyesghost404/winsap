@@ -35,16 +35,30 @@ const getEmployeeById = async (req, res) => {
 
 const createEmployee = async (req, res) => {
     try {
-        const { matricule, first_name, last_name, hire_date } = req.body;
+        const { matricule, first_name, last_name, email } = req.body;
+        let hire_date = req.body.hire_date || new Date().toISOString().split('T')[0];
         
-        if (!matricule || !first_name || !last_name || !hire_date) {
+        if (!matricule || !first_name || !last_name) {
             return res.status(400).json({ 
                 success: false, 
-                message: "Matricule, first name, last name, and hire date are required" 
+                message: "Matricule, first name, and last name are required" 
+            });
+        }
+
+        // Manager authorization rule: Manager cannot set employee email address
+        if (req.user && req.user.role === 'manager' && email) {
+            return res.status(403).json({ 
+                success: false, 
+                message: "Managers cannot set employee email addresses. Email addresses are managed by Administrators." 
             });
         }
         
-        const employee = await Employee.create(req.body);
+        const employeeData = { ...req.body, hire_date };
+        if (req.user && req.user.role === 'manager') {
+            employeeData.email = null;
+        }
+
+        const employee = await Employee.create(employeeData);
         
         // Initialize leave balance for the new employee
         await LeaveBalance.initialize(employee.id);
@@ -64,20 +78,34 @@ const createEmployee = async (req, res) => {
 const updateEmployee = async (req, res) => {
     try {
         const { id } = req.params;
-        const { matricule, first_name, last_name, hire_date } = req.body;
-        
-        if (!matricule || !first_name || !last_name || !hire_date) {
-            return res.status(400).json({ 
-                success: false, 
-                message: "Matricule, first name, last name, and hire date are required" 
-            });
-        }
-        
-        const employee = await Employee.update(id, req.body);
-        
-        if (!employee) {
+        const existing = await Employee.getById(id);
+        if (!existing) {
             return res.status(404).json({ success: false, message: "Employee not found" });
         }
+
+        const { matricule, first_name, last_name, email } = req.body;
+        let hire_date = req.body.hire_date || existing.hire_date || new Date().toISOString().split('T')[0];
+        
+        if (!matricule || !first_name || !last_name) {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Matricule, first name, and last name are required" 
+            });
+        }
+
+        // Manager authorization rule: Manager cannot modify existing employee email address
+        const updateData = { ...req.body, hire_date };
+        if (req.user && req.user.role === 'manager') {
+            if (email && existing.email && email !== existing.email) {
+                return res.status(403).json({ 
+                    success: false, 
+                    message: "Managers cannot modify employee email addresses. Email addresses are managed by Administrators." 
+                });
+            }
+            updateData.email = existing.email; // Preserve existing email
+        }
+        
+        const employee = await Employee.update(id, updateData);
         
         res.json({ success: true, data: employee });
     } catch (error) {
@@ -149,9 +177,20 @@ const registerFace = async (req, res) => {
   }
 };
 
+const getUnlinkedEmployees = async (req, res) => {
+    try {
+        const unlinked = await Employee.getUnlinkedEmployees();
+        res.json({ success: true, data: unlinked });
+    } catch (error) {
+        console.error("Get unlinked employees error:", error);
+        res.status(500).json({ success: false, message: "Failed to fetch unlinked employees" });
+    }
+};
+
 module.exports = {
     getEmployees,
     getEmployeeById,
+    getUnlinkedEmployees,
     createEmployee,
     updateEmployee,
     deleteEmployee,

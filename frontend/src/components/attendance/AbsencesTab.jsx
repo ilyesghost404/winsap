@@ -1,23 +1,21 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { CheckCircle2, Edit2, Search, Filter, X, AlertTriangle, Clock, ChevronDown, ChevronUp } from 'lucide-react';
-import Button from '../../components/Button';
-import Modal from '../../components/Modal';
-import LoadingSpinner, { SkeletonTable } from '../../components/LoadingSpinner';
-import ErrorMessage from '../../components/ErrorMessage';
-import EmptyState from '../../components/EmptyState';
-import Pagination from '../../components/Pagination';
+import { CheckCircle2, Edit2, Search, Filter, X, AlertTriangle, Clock, RefreshCw } from 'lucide-react';
+import Button from '../Button';
+import Modal from '../Modal';
+import { SkeletonTable } from '../LoadingSpinner';
+import EmptyState from '../EmptyState';
+import Pagination from '../Pagination';
+import StatusBadge from '../StatusBadge';
 import { getAnomalies, validateAnomaly } from '../../services/attendanceService';
 
 const AbsencesTab = () => {
   const [anomalies, setAnomalies] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedAnomaly, setSelectedAnomaly] = useState(null);
-  const [showFilters, setShowFilters] = useState(false);
   const [formData, setFormData] = useState({
-    validation_status: 'Pending',
+    validation_status: 'Validated',
     justification_reason: '',
   });
 
@@ -33,12 +31,10 @@ const AbsencesTab = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      setError(null);
       const data = await getAnomalies({ page: 1, limit: 1000, search: '' });
       setAnomalies(data.data || []);
     } catch (err) {
       console.error('Error fetching anomalies:', err);
-      setError('Failed to load system absences/anomalies.');
       toast.error('Failed to load absences');
     } finally {
       setLoading(false);
@@ -49,25 +45,29 @@ const AbsencesTab = () => {
     fetchData();
   }, []);
 
-  const filteredAnomalies = Array.isArray(anomalies) ? anomalies.filter(a => {
-    const matchesSearch = !searchTerm || 
-      (a.first_name && a.first_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (a.last_name && a.last_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (a.matricule && a.matricule.toLowerCase().includes(searchTerm.toLowerCase()));
-    
-    const valStatus = a.validation_status || 'Pending';
-    const matchesStatus = statusFilter === 'All' || valStatus === statusFilter;
-    const matchesType = typeFilter === 'All' || a.anomaly_type === typeFilter;
-    
-    return matchesSearch && matchesStatus && matchesType;
-  }) : [];
+  const filteredAnomalies = Array.isArray(anomalies)
+    ? anomalies.filter((a) => {
+        const matchesSearch =
+          !searchTerm ||
+          (a.first_name && a.first_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+          (a.last_name && a.last_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+          (a.matricule && a.matricule.toLowerCase().includes(searchTerm.toLowerCase()));
+
+        const valStatus = a.validation_status || 'Pending';
+        const matchesStatus = statusFilter === 'All' || valStatus === statusFilter;
+        const matchesType = typeFilter === 'All' || a.anomaly_type === typeFilter;
+
+        return matchesSearch && matchesStatus && matchesType;
+      })
+    : [];
 
   const paginatedAnomalies = filteredAnomalies.slice((page - 1) * limit, page * limit);
+  const totalPages = Math.ceil(filteredAnomalies.length / limit);
 
-  const handleOpenValidate = (anomaly) => {
+  const handleValidate = (anomaly) => {
     setSelectedAnomaly(anomaly);
     setFormData({
-      validation_status: anomaly.validation_status || 'Pending',
+      validation_status: anomaly.validation_status || 'Validated',
       justification_reason: anomaly.justification_reason || '',
     });
     setIsModalOpen(true);
@@ -75,278 +75,237 @@ const AbsencesTab = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!selectedAnomaly) return;
     try {
       await validateAnomaly(selectedAnomaly.id, formData);
-      toast.success('Validation saved successfully');
+      toast.success('Anomaly status updated successfully');
       setIsModalOpen(false);
       fetchData();
-    } catch (err) {
-      console.error('Error saving validation:', err);
-      toast.error(err?.response?.data?.message || 'Failed to save validation');
+    } catch (error) {
+      console.error('Error updating anomaly:', error);
+      toast.error(error.response?.data?.message || 'Failed to update anomaly');
     }
   };
-
-  const getInitials = (firstName, lastName) => {
-    const f = firstName ? firstName.charAt(0) : '';
-    const l = lastName ? lastName.charAt(0) : '';
-    return `${f}${l}`.toUpperCase();
-  };
-
-  const getTypeStyle = (type) => {
-    switch (type) {
-      case 'Absent': return { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', icon: '🔴' };
-      case 'Late': return { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', icon: '🟠' };
-      case 'Missing Check-out': return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', icon: '🟡' };
-      default: return { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border-slate-200', icon: '⚪' };
-    }
-  };
-
-  const getValidationStyle = (status) => {
-    switch (status) {
-      case 'Justified': return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-      case 'Unjustified': return 'bg-rose-50 text-rose-700 border-rose-200';
-      default: return 'bg-amber-50 text-amber-700 border-amber-200';
-    }
-  };
-
-  const hasActiveFilters = searchTerm || statusFilter !== 'All' || typeFilter !== 'All';
-
-  if (loading) {
-    return <SkeletonTable rows={6} columns={6} />;
-  }
-
-  if (error) {
-    return (
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-8">
-        <ErrorMessage message={error} />
-        <Button onClick={fetchData} className="mt-4">Try Again</Button>
-      </div>
-    );
-  }
 
   return (
-    <div className="space-y-5">
-      {/* Header + Toggle Filter */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h3 className="text-lg font-bold text-slate-800">System Absences & Anomalies</h3>
-        
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1 sm:min-w-[220px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+    <div className="space-y-4">
+      {/* Search & Filter Toolbar */}
+      <div className="bg-white rounded-2xl border border-[#d9e7f5] p-3.5 shadow-xs">
+        <div className="flex flex-wrap gap-3 items-center">
+          <div className="relative flex-1 min-w-[240px]">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input
               type="text"
-              placeholder="Search employee..."
+              placeholder="Search anomalies by employee name or matricule…"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setPage(1);
+              }}
+              className="w-full pl-10 pr-8 py-2 bg-[#f0f7ff] border border-[#d9e7f5] rounded-xl text-xs font-semibold text-[#172033] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 focus:bg-white transition-all"
             />
             {searchTerm && (
-              <button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[#172033] cursor-pointer"
+              >
                 <X size={14} />
               </button>
             )}
           </div>
 
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={`flex items-center gap-1.5 px-3 py-2 border rounded-xl text-sm font-medium transition-all ${
-              showFilters || hasActiveFilters
-                ? 'bg-blue-50 border-blue-200 text-blue-700' 
-                : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
-            }`}
-          >
-            <Filter size={14} />
-            Filters
-            {showFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setStatusFilter(e.target.value);
+                setPage(1);
+              }}
+              className="px-3 py-2 bg-[#f0f7ff] border border-[#d9e7f5] rounded-xl text-xs font-bold text-[#172033] cursor-pointer focus:bg-white focus:outline-none"
+            >
+              <option value="All">All Statuses</option>
+              <option value="Pending">Pending Review</option>
+              <option value="Validated">Validated</option>
+              <option value="Rejected">Rejected</option>
+            </select>
+
+            <select
+              value={typeFilter}
+              onChange={(e) => {
+                setTypeFilter(e.target.value);
+                setPage(1);
+              }}
+              className="px-3 py-2 bg-[#f0f7ff] border border-[#d9e7f5] rounded-xl text-xs font-bold text-[#172033] cursor-pointer focus:bg-white focus:outline-none"
+            >
+              <option value="All">All Categories</option>
+              <option value="Absence">Unexcused Absence</option>
+              <option value="Late">Late Check-in</option>
+              <option value="Early Leave">Early Leave</option>
+              <option value="Missing Checkout">Missing Checkout</option>
+            </select>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={RefreshCw}
+              onClick={fetchData}
+              title="Refresh anomaly logs"
+            >
+              Refresh
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Collapsible Filters */}
-      {showFilters && (
-        <div className="bg-white rounded-xl border border-slate-200 p-4 flex flex-wrap gap-3 items-center animate-fade-in">
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="All">All Validation</option>
-            <option value="Pending">Pending</option>
-            <option value="Justified">Justified</option>
-            <option value="Unjustified">Unjustified</option>
-          </select>
-          
-          <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="All">All Types</option>
-            <option value="Absent">Absent</option>
-            <option value="Late">Late</option>
-            <option value="Missing Check-out">Missing Check-out</option>
-          </select>
-
-          {hasActiveFilters && (
-            <button
-              onClick={() => { setSearchTerm(''); setStatusFilter('All'); setTypeFilter('All'); }}
-              className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
-            >
-              <X size={14} /> Clear all
-            </button>
-          )}
-
-          <span className="ml-auto text-xs text-slate-400 font-medium">
-            {filteredAnomalies.length} record{filteredAnomalies.length !== 1 ? 's' : ''}
-          </span>
-        </div>
-      )}
-
-      {/* Table */}
-      {filteredAnomalies.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
+      {/* Anomalies Table */}
+      {loading ? (
+        <SkeletonTable rows={6} columns={6} />
+      ) : filteredAnomalies.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-[#d9e7f5] shadow-xs">
           <EmptyState
-            title="No system absences or anomalies found"
-            description={hasActiveFilters ? "Try adjusting your filters" : "All clear — no anomalies detected"}
-            icon={CheckCircle2}
+            title="No anomalies or attendance incidents found"
+            description="All employees are currently checked in correctly without recorded discrepancies."
+            icon={AlertTriangle}
           />
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-[#d9e7f5] shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="bg-slate-50/80 border-b border-slate-100">
-                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Date</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Employee</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Type</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider hidden md:table-cell">System Status</th>
-                  <th className="px-6 py-4 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Validation</th>
-                  <th className="px-6 py-4 text-right text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
+            <table className="min-w-full divide-y divide-[#f0f7ff] text-sm">
+              <thead className="bg-[#f0f7ff] text-[#1e3a8a] border-b border-[#d9e7f5]">
+                <tr>
+                  <th className="px-6 py-3.5 text-left text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#1e3a8a]">
+                    Employee
+                  </th>
+                  <th className="px-6 py-3.5 text-left text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#1e3a8a]">
+                    Date
+                  </th>
+                  <th className="px-6 py-3.5 text-left text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#1e3a8a]">
+                    Incident Type
+                  </th>
+                  <th className="px-6 py-3.5 text-left text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#1e3a8a]">
+                    Duration
+                  </th>
+                  <th className="px-6 py-3.5 text-left text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#1e3a8a]">
+                    Status
+                  </th>
+                  <th className="px-6 py-3.5 text-right text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#1e3a8a]">
+                    Actions
+                  </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {paginatedAnomalies.map((row, idx) => {
-                  const typeStyle = getTypeStyle(row.anomaly_type);
-                  const valStatus = row.validation_status || 'Pending';
-                  return (
-                    <tr key={row.id || idx} className="group hover:bg-blue-50/20 transition-colors">
-                      <td className="px-6 py-4 text-sm text-slate-600 font-medium whitespace-nowrap">
-                        {new Date(row.date).toLocaleDateString('en-US', {
-                          month: 'short', day: 'numeric', year: 'numeric'
-                        })}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center text-white text-xs font-bold shadow-sm">
-                            {getInitials(row.first_name, row.last_name)}
-                          </div>
-                          <div>
-                            <div className="font-semibold text-slate-800 text-sm">{row.first_name} {row.last_name}</div>
-                            <div className="text-xs text-slate-500">{row.matricule}</div>
-                          </div>
+              <tbody className="divide-y divide-[#f0f7ff] bg-white">
+                {paginatedAnomalies.map((anomaly) => (
+                  <tr key={anomaly.id} className="hover:bg-[#f0f7ff]/60 transition-colors">
+                    <td className="px-6 py-3.5 whitespace-nowrap">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8.5 h-8.5 rounded-xl bg-gradient-to-tr from-blue-600 to-sky-500 text-white font-bold text-xs flex items-center justify-center flex-shrink-0 shadow-2xs border border-white/20">
+                          {(anomaly.first_name || 'U').charAt(0)}
+                          {(anomaly.last_name || '').charAt(0)}
                         </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border ${typeStyle.bg} ${typeStyle.text} ${typeStyle.border}`}>
-                          <span className="text-[10px]">{typeStyle.icon}</span>
-                          {row.anomaly_type}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 hidden md:table-cell">
-                        <span className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-600">
-                          {row.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col gap-1">
-                          <span className={`inline-block px-2.5 py-1 rounded-lg text-xs font-bold w-max border ${getValidationStyle(valStatus)}`}>
-                            {valStatus}
-                          </span>
-                          {row.justification_reason && (
-                            <span className="text-[11px] text-slate-500 max-w-[150px] truncate" title={row.justification_reason}>
-                              {row.justification_reason}
-                            </span>
-                          )}
+                        <div>
+                          <p className="font-bold text-[#172033] text-xs sm:text-sm">
+                            {anomaly.first_name} {anomaly.last_name}
+                          </p>
+                          <p className="text-[11px] text-slate-400 font-mono">{anomaly.matricule}</p>
                         </div>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={() => handleOpenValidate(row)}
-                          className="inline-flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-700 hover:text-blue-700 text-xs font-semibold rounded-xl transition-all"
-                        >
-                          {valStatus !== 'Pending' ? (
-                            <><Edit2 size={13} /> Edit</>
-                          ) : (
-                            <><CheckCircle2 size={13} /> Validate</>
-                          )}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                      </div>
+                    </td>
+
+                    <td className="px-6 py-3.5 whitespace-nowrap text-xs font-mono font-semibold text-[#172033]">
+                      {new Date(anomaly.anomaly_date).toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </td>
+
+                    <td className="px-6 py-3.5 whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                        {anomaly.anomaly_type}
+                      </span>
+                    </td>
+
+                    <td className="px-6 py-3.5 whitespace-nowrap text-xs font-mono font-bold text-slate-700">
+                      {anomaly.duration_minutes ? `${anomaly.duration_minutes} mins` : 'Full Day'}
+                    </td>
+
+                    <td className="px-6 py-3.5 whitespace-nowrap">
+                      <StatusBadge status={anomaly.validation_status || 'Pending'} type="dot" />
+                    </td>
+
+                    <td className="px-6 py-3.5 whitespace-nowrap text-right">
+                      <Button
+                        variant="softBlue"
+                        size="xs"
+                        icon={Edit2}
+                        onClick={() => handleValidate(anomaly)}
+                      >
+                        Review
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
-          {!loading && filteredAnomalies.length > 0 && (
-            <Pagination 
-              page={page} 
-              limit={limit} 
-              total={filteredAnomalies.length} 
-              totalPages={Math.ceil(filteredAnomalies.length / limit)} 
-              onPageChange={(newPage) => setPage(newPage)} 
-            />
+
+          {totalPages > 1 && (
+            <div className="p-4 border-t border-[#d9e7f5]">
+              <Pagination
+                page={page}
+                limit={limit}
+                total={filteredAnomalies.length}
+                totalPages={totalPages}
+                onPageChange={(p) => setPage(p)}
+              />
+            </div>
           )}
         </div>
       )}
 
+      {/* Validation Modal */}
       <Modal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        title="Validate Absence/Anomaly"
+        title="Review Attendance Incident"
+        subtitle="Validate or reject this absence record and enter managerial remarks."
       >
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 mb-4">
-            <p className="text-sm font-medium text-slate-700">
-              Employee: {selectedAnomaly?.first_name} {selectedAnomaly?.last_name}
-            </p>
-            <p className="text-sm text-slate-500">
-              Date: {selectedAnomaly ? new Date(selectedAnomaly.date).toLocaleDateString() : ''}
-            </p>
-            <p className="text-sm text-slate-500 mt-1">
-              Anomaly Type: <span className="font-semibold text-slate-700">{selectedAnomaly?.anomaly_type}</span>
-            </p>
-          </div>
-
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Validation Status</label>
+            <label className="block text-xs font-heading font-extrabold text-[#172033] uppercase tracking-wider mb-1.5">
+              Decision Status <span className="text-rose-500">*</span>
+            </label>
             <select
-              required
               value={formData.validation_status}
               onChange={(e) => setFormData({ ...formData, validation_status: e.target.value })}
-              className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-3.5 py-2.5 bg-white border border-[#d9e7f5] rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 cursor-pointer"
             >
-              <option value="Pending">Pending</option>
-              <option value="Justified">Justified</option>
-              <option value="Unjustified">Unjustified</option>
+              <option value="Validated">Approved / Justified</option>
+              <option value="Rejected">Rejected / Unexcused</option>
+              <option value="Pending">Keep Pending</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Justification / Notes</label>
+            <label className="block text-xs font-heading font-extrabold text-[#172033] uppercase tracking-wider mb-1.5">
+              Justification Notes
+            </label>
             <textarea
+              rows={3}
+              placeholder="e.g. Medical certificate provided on arrival, delay excused due to transport anomaly…"
               value={formData.justification_reason}
               onChange={(e) => setFormData({ ...formData, justification_reason: e.target.value })}
-              rows={4}
-              placeholder="E.g., Medical certificate provided, technical error with check-in system..."
-              className="w-full px-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-3.5 py-2.5 bg-white border border-[#d9e7f5] rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 resize-none"
             />
           </div>
 
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-            <Button variant="secondary" onClick={() => setIsModalOpen(false)}>Cancel</Button>
-            <Button type="submit">Save Validation</Button>
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#d9e7f5]">
+            <Button variant="secondary" onClick={() => setIsModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit">
+              Save Decision
+            </Button>
           </div>
         </form>
       </Modal>

@@ -1,18 +1,18 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { 
-  Mail, Briefcase, Calendar, Hash, Building, ShieldCheck, 
-  Phone, MapPin, Edit2, CalendarDays, Clock, CheckCircle2
+import {
+  Mail, Briefcase, Calendar, Hash, Building2, ShieldCheck,
+  Phone, Edit2, CalendarDays, Clock, CheckCircle2, User, Zap, Sparkles
 } from 'lucide-react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
 import LoadingSpinner from '../components/LoadingSpinner';
+import StatsCard from '../components/StatsCard';
+import StatusBadge from '../components/StatusBadge';
 import { useAuth } from '../context/AuthContext';
 import { getEmployeeById, updateEmployee } from '../services/employeeService';
 import { getDashboardStats } from '../services/dashboardService';
-
-import { useNavigate } from 'react-router-dom';
 
 const parseLocalDate = (dateStr) => {
   if (!dateStr) return null;
@@ -22,20 +22,21 @@ const parseLocalDate = (dateStr) => {
 };
 
 const ProfileInfoRow = ({ icon: Icon, label, value }) => (
-  <div className="flex items-start gap-4 p-4 hover:bg-slate-50 transition-colors rounded-xl border border-transparent hover:border-slate-100">
-    <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 shadow-sm">
-      <Icon size={22} strokeWidth={2} />
+  <div className="flex items-center gap-3.5 p-4 rounded-2xl bg-white border border-[#dde5ec] shadow-premium-sm transition-all hover:border-[#0082fb] hover:shadow-blue-sm">
+    <div className="w-10 h-10 rounded-xl bg-[#e7f0fa] text-[#0064e0] flex items-center justify-center flex-shrink-0 border border-[#dde5ec] shadow-2xs">
+      <Icon size={18} strokeWidth={2.4} />
     </div>
-    <div className="pt-1">
-      <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">{label}</p>
-      <p className="text-slate-800 font-bold text-[15px]">{value || <span className="text-slate-300 italic">Not provided</span>}</p>
+    <div className="min-w-0 flex-1">
+      <p className="text-[10px] font-heading font-extrabold text-slate-500 uppercase tracking-wider">{label}</p>
+      <p className="text-xs sm:text-sm font-bold text-[#1c2b33] truncate mt-0.5">
+        {value || <span className="text-slate-400 font-normal">Not specified</span>}
+      </p>
     </div>
   </div>
 );
 
 const Profile = () => {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const [employee, setEmployee] = useState(null);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -51,7 +52,7 @@ const Profile = () => {
     phone: '',
     department: '',
     position: '',
-    hire_date: ''
+    hire_date: '',
   });
 
   const fetchProfileData = async () => {
@@ -61,15 +62,25 @@ const Profile = () => {
         return;
       }
       setLoading(true);
-      const [empData, dashStats] = await Promise.all([
+      const [empData, statsData] = await Promise.all([
         getEmployeeById(user.employee_id),
-        getDashboardStats().catch(() => null)
+        getDashboardStats().catch(() => null),
       ]);
       setEmployee(empData);
-      if (dashStats) setStats(dashStats);
+      setStats(statsData);
+      setFormData({
+        matricule: empData.matricule || '',
+        first_name: empData.first_name || '',
+        last_name: empData.last_name || '',
+        email: empData.email || '',
+        phone: empData.phone || '',
+        department: empData.department || '',
+        position: empData.position || '',
+        hire_date: empData.hire_date ? empData.hire_date.split('T')[0] : '',
+      });
     } catch (error) {
-      console.error('Error fetching profile:', error);
-      toast.error('Failed to load profile details');
+      console.error('Failed to load profile data:', error);
+      toast.error('Failed to load profile information');
     } finally {
       setLoading(false);
     }
@@ -79,36 +90,17 @@ const Profile = () => {
     fetchProfileData();
   }, [user]);
 
-  const handleEditClick = () => {
-    setFormData({
-      matricule: employee.matricule || '',
-      first_name: employee.first_name || '',
-      last_name: employee.last_name || '',
-      email: employee.email || '',
-      phone: employee.phone || '',
-      department: employee.department || '',
-      position: employee.position || '',
-      hire_date: employee.hire_date ? parseLocalDate(employee.hire_date).toISOString().split('T')[0] : ''
-    });
-    setIsEditModalOpen(true);
-  };
-
-  const handleUpdateProfile = async (e) => {
+  const handleUpdate = async (e) => {
     e.preventDefault();
-    if (!formData.first_name || !formData.last_name || !formData.matricule || !formData.hire_date) {
-      toast.error('Please fill in all required fields');
-      return;
-    }
-
     try {
       setIsSubmitting(true);
-      await updateEmployee(employee.id, formData);
+      await updateEmployee(user.employee_id, formData);
       toast.success('Profile updated successfully');
       setIsEditModalOpen(false);
       fetchProfileData();
     } catch (error) {
-      console.error('Error updating profile:', error);
-      toast.error(error?.response?.data?.message || 'Failed to update profile. You might not have permission.');
+      console.error('Failed to update profile:', error);
+      toast.error(error.response?.data?.message || 'Failed to update profile');
     } finally {
       setIsSubmitting(false);
     }
@@ -116,270 +108,211 @@ const Profile = () => {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <LoadingSpinner size="lg" />
-        <p className="mt-4 text-slate-500 font-medium animate-pulse">Loading your profile...</p>
+      <div className="py-20 flex justify-center">
+        <LoadingSpinner size="lg" text="Loading profile details…" />
       </div>
     );
   }
 
-  if (!employee) {
-    return (
-      <div className="min-h-screen pb-12">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-slate-800 tracking-tight mb-2">My Profile</h1>
-        </div>
-        <Card className="p-12 text-center shadow-sm border-slate-200">
-          <ShieldCheck className="mx-auto text-slate-300 mb-4" size={48} />
-          <h3 className="text-xl font-bold text-slate-700 mb-2">No Profile Linked</h3>
-          <p className="text-slate-500 max-w-sm mx-auto">Your user account does not have an associated employee profile. Please contact an administrator.</p>
-        </Card>
-      </div>
-    );
-  }
-
-  // Calculate leave summary
-  const remainingVacation = stats?.remainingVacationDays ?? 0;
-  const usedVacation = 30 - remainingVacation;
+  const initials = employee
+    ? `${employee.first_name?.[0] || ''}${employee.last_name?.[0] || ''}`.toUpperCase()
+    : user?.username?.[0]?.toUpperCase() || 'U';
 
   return (
-    <div className="min-h-screen pb-12">
-      <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-800 tracking-tight mb-1">My Profile</h1>
-          <p className="text-slate-500 font-medium">View and manage your personal details</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button variant="secondary" icon={ShieldCheck} onClick={() => navigate('/profile/security')} className="px-6">
-            Security Settings
-          </Button>
-          <Button icon={Edit2} onClick={handleEditClick} className="shadow-lg hover:shadow-blue-500/25 px-6">
-            Edit Profile
-          </Button>
-        </div>
-      </div>
-
-      <div className="space-y-8">
-        {/* Profile Header Card */}
-        <Card className="p-0 overflow-hidden shadow-sm border-slate-200">
-          <div className="h-32 bg-gradient-to-r from-blue-600 via-indigo-600 to-blue-700 relative">
-            <div className="absolute top-4 right-4 bg-white/20 backdrop-blur-md px-3 py-1 rounded-full text-white text-xs font-bold uppercase tracking-wider border border-white/30 flex items-center gap-1.5 shadow-sm">
-              <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"></div>
-              Active Employee
+    <div className="space-y-6">
+      {/* ── Meta Dark Slate & Deep Blue Hero Banner ────────────────── */}
+      <div className="rounded-3xl bg-gradient-to-r from-[#1c2b33] to-[#0064e0] p-6 sm:p-8 text-white shadow-electric-glow border border-blue-400/30 relative overflow-hidden">
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+          <div className="flex items-center gap-4">
+            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-[#1c2b33] text-white text-2xl font-heading font-black flex items-center justify-center flex-shrink-0 shadow-electric-glow border border-white/30">
+              {initials}
             </div>
-          </div>
-          <div className="px-8 pb-8 relative">
-            <div className="flex flex-col sm:flex-row sm:items-end gap-6 -mt-12 sm:-mt-16 mb-4">
-              <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-3xl bg-white p-2 shadow-lg shrink-0 z-10">
-                <div className="w-full h-full rounded-2xl bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center border border-slate-100">
-                  <span className="text-3xl sm:text-4xl font-black text-slate-400">
-                    {employee.first_name?.[0]}{employee.last_name?.[0]}
-                  </span>
-                </div>
-              </div>
-              <div className="flex-1 pb-2">
-                <h2 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight">
-                  {employee.first_name} {employee.last_name}
+            <div>
+              <div className="flex items-center gap-2.5">
+                <h2 className="text-xl sm:text-3xl font-heading font-black tracking-tight text-white">
+                  {employee
+                    ? `${employee.first_name} ${employee.last_name}`
+                    : user?.username || 'Account Profile'}
                 </h2>
-                <div className="flex items-center gap-3 mt-2 flex-wrap">
-                  <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-bold uppercase tracking-wider border border-blue-100 shadow-sm">
-                    {employee.position || 'Employee'}
-                  </span>
-                  {employee.department && (
-                    <span className="flex items-center gap-1 text-slate-500 text-sm font-semibold bg-slate-50 px-3 py-1 rounded-full border border-slate-200 shadow-sm">
-                      <Building size={14} /> {employee.department}
-                    </span>
-                  )}
-                  {employee.matricule && (
-                    <span className="flex items-center gap-1 text-slate-500 text-sm font-semibold bg-slate-50 px-3 py-1 rounded-full border border-slate-200 shadow-sm">
-                      <Hash size={14} /> ID: {employee.matricule}
-                    </span>
-                  )}
-                </div>
+                <StatusBadge status="active" type="dot" />
               </div>
+              <p className="text-blue-100 text-xs sm:text-sm mt-1 flex items-center gap-2 flex-wrap">
+                <span>{employee?.position || 'Team Member'}</span>
+                <span>·</span>
+                <span>{employee?.department || 'AbsenceFlow'}</span>
+                <span>·</span>
+                <span className="font-mono text-white font-extrabold px-2 py-0.5 rounded-md bg-white/20 backdrop-blur-xs border border-white/30">
+                  #{employee?.matricule || user?.role}
+                </span>
+              </p>
             </div>
           </div>
-        </Card>
 
-        {/* Information Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          
-          {/* Personal Information */}
-          <Card className="p-6 shadow-sm border-slate-200">
-            <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2 pb-4 border-b border-slate-100">
-              <ShieldCheck className="text-blue-600" size={20} />
-              Personal Information
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <ProfileInfoRow icon={ShieldCheck} label="First Name" value={employee.first_name} />
-              <ProfileInfoRow icon={ShieldCheck} label="Last Name" value={employee.last_name} />
-              <ProfileInfoRow icon={Mail} label="Work Email" value={employee.email} />
-              <ProfileInfoRow icon={Phone} label="Phone Number" value={employee.phone} />
-            </div>
-          </Card>
-
-          {/* Employment Information */}
-          <Card className="p-6 shadow-sm border-slate-200">
-            <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2 pb-4 border-b border-slate-100">
-              <Briefcase className="text-indigo-600" size={20} />
-              Employment Information
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <ProfileInfoRow icon={Hash} label="Employee ID" value={employee.matricule} />
-              <ProfileInfoRow icon={Building} label="Department" value={employee.department} />
-              <ProfileInfoRow icon={Briefcase} label="Position" value={employee.position} />
-              <ProfileInfoRow 
-                icon={Calendar} 
-                label="Hire Date" 
-                value={employee.hire_date ? parseLocalDate(employee.hire_date)?.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : null} 
-              />
-            </div>
-          </Card>
-
-          {/* Leave Summary */}
-          {stats && (
-            <Card className="p-6 shadow-sm border-slate-200 lg:col-span-2">
-              <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2 pb-4 border-b border-slate-100">
-                <CalendarDays className="text-emerald-600" size={20} />
-                Leave Summary
-              </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 flex flex-col items-center justify-center text-center">
-                  <p className="text-emerald-600 font-black text-3xl mb-1">{remainingVacation}</p>
-                  <p className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider">Remaining Days</p>
-                </div>
-                <div className="bg-amber-50 rounded-2xl p-4 border border-amber-100 flex flex-col items-center justify-center text-center">
-                  <p className="text-amber-600 font-black text-3xl mb-1">{usedVacation}</p>
-                  <p className="text-[11px] font-bold text-amber-700 uppercase tracking-wider">Used Days</p>
-                </div>
-                <div className="bg-blue-50 rounded-2xl p-4 border border-blue-100 flex flex-col items-center justify-center text-center">
-                  <p className="text-blue-600 font-black text-3xl mb-1">{stats.pendingRequests || 0}</p>
-                  <p className="text-[11px] font-bold text-blue-700 uppercase tracking-wider flex items-center gap-1"><Clock size={12}/> Pending Requests</p>
-                </div>
-                <div className="bg-purple-50 rounded-2xl p-4 border border-purple-100 flex flex-col items-center justify-center text-center">
-                  <p className="text-purple-600 font-black text-3xl mb-1">{stats.approvedRequests || 0}</p>
-                  <p className="text-[11px] font-bold text-purple-700 uppercase tracking-wider flex items-center gap-1"><CheckCircle2 size={12}/> Approved Leaves</p>
-                </div>
-              </div>
-            </Card>
+          {employee && (
+            <Button variant="secondary" icon={Edit2} onClick={() => setIsEditModalOpen(true)} size="sm">
+              Edit Profile
+            </Button>
           )}
-
         </div>
+
+        {/* Ambient Glow */}
+        <div className="absolute -right-20 -top-20 w-80 h-80 bg-white/15 rounded-full blur-3xl pointer-events-none" />
       </div>
+
+      {/* KPI Metrics */}
+      {stats && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <StatsCard
+            title="Present Days"
+            value={stats.presentDays ?? 0}
+            subtitle="Current cycle"
+            icon={CheckCircle2}
+            colorClass="text-emerald-600"
+            bgClass="bg-emerald-50 border border-emerald-200"
+          />
+          <StatsCard
+            title="Approved Leave"
+            value={stats.approvedAbsences ?? 0}
+            subtitle="Validated requests"
+            icon={CalendarDays}
+            variant="blue"
+          />
+          <StatsCard
+            title="Pending Requests"
+            value={stats.pendingAbsences ?? 0}
+            subtitle="Under review"
+            icon={Clock}
+            colorClass="text-amber-600"
+            bgClass="bg-amber-50 border border-amber-200"
+          />
+        </div>
+      )}
+
+      {/* Detailed Information Grid */}
+      <Card
+        headerVariant="softBlue"
+        title="Personal & Organizational Details"
+        subtitle="Primary company credentials, contact channels, and system allocation."
+      >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+          <ProfileInfoRow
+            icon={Hash}
+            label="Matricule / Employee ID"
+            value={employee?.matricule || 'N/A'}
+          />
+          <ProfileInfoRow
+            icon={Mail}
+            label="Email Address"
+            value={employee?.email || user?.email || 'N/A'}
+          />
+          <ProfileInfoRow
+            icon={Phone}
+            label="Phone Number"
+            value={employee?.phone || 'Not provided'}
+          />
+          <ProfileInfoRow
+            icon={Building2}
+            label="Department"
+            value={employee?.department || 'Unassigned'}
+          />
+          <ProfileInfoRow
+            icon={Briefcase}
+            label="Position / Role"
+            value={employee?.position || 'Staff'}
+          />
+          <ProfileInfoRow
+            icon={Calendar}
+            label="Hire Date"
+            value={
+              parseLocalDate(employee?.hire_date)?.toLocaleDateString('en-US', {
+                month: 'long',
+                day: 'numeric',
+                year: 'numeric',
+              }) || 'Not recorded'
+            }
+          />
+        </div>
+      </Card>
 
       {/* Edit Profile Modal */}
       <Modal
         isOpen={isEditModalOpen}
-        onClose={() => !isSubmitting && setIsEditModalOpen(false)}
-        title="Edit Profile"
+        onClose={() => setIsEditModalOpen(false)}
+        title="Edit Personal Information"
+        subtitle="Update contact phone, email, and position."
       >
-        <form onSubmit={handleUpdateProfile} className="space-y-5">
-          <div className="bg-amber-50 text-amber-700 p-4 rounded-xl border border-amber-200 text-sm font-medium flex gap-3 mb-6">
-            <ShieldCheck className="shrink-0 text-amber-500" size={20} />
-            <p>Note: Updating your profile information requires approval and adequate permissions. Changes will be logged.</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
+        <form onSubmit={handleUpdate} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">First Name <span className="text-red-500">*</span></label>
+              <label className="block text-xs font-heading font-extrabold text-[#1c2b33] uppercase tracking-wider mb-1.5">
+                First Name <span className="text-rose-500">*</span>
+              </label>
               <input
                 type="text"
                 required
                 value={formData.first_name}
                 onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700 bg-slate-50 focus:bg-white transition-colors"
+                className="w-full px-3.5 py-2.5 bg-[#f1f5f8] border border-[#dde5ec] rounded-xl text-xs sm:text-sm font-semibold text-[#1c2b33] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#0064e0] focus:bg-white transition-all"
               />
             </div>
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">Last Name <span className="text-red-500">*</span></label>
+              <label className="block text-xs font-heading font-extrabold text-[#1c2b33] uppercase tracking-wider mb-1.5">
+                Last Name <span className="text-rose-500">*</span>
+              </label>
               <input
                 type="text"
                 required
                 value={formData.last_name}
                 onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700 bg-slate-50 focus:bg-white transition-colors"
+                className="w-full px-3.5 py-2.5 bg-[#f1f5f8] border border-[#dde5ec] rounded-xl text-xs sm:text-sm font-semibold text-[#1c2b33] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#0064e0] focus:bg-white transition-all"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">Email</label>
+              <label className="block text-xs font-heading font-extrabold text-[#1c2b33] uppercase tracking-wider mb-1.5">
+                Email Address <span className="text-rose-500">*</span>
+              </label>
               <input
                 type="email"
+                required
                 value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700 bg-slate-50 focus:bg-white transition-colors"
+                className="w-full px-3.5 py-2.5 bg-[#f1f5f8] border border-[#dde5ec] rounded-xl text-xs sm:text-sm font-semibold text-[#1c2b33] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#0064e0] focus:bg-white transition-all"
               />
             </div>
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">Phone</label>
+              <label className="block text-xs font-heading font-extrabold text-[#1c2b33] uppercase tracking-wider mb-1.5">
+                Phone Number
+              </label>
               <input
                 type="text"
                 value={formData.phone}
                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700 bg-slate-50 focus:bg-white transition-colors"
+                className="w-full px-3.5 py-2.5 bg-[#f1f5f8] border border-[#dde5ec] rounded-xl text-xs sm:text-sm font-semibold text-[#1c2b33] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#0064e0] focus:bg-white transition-all"
               />
             </div>
           </div>
 
-          <hr className="border-slate-100 my-4" />
-
-          <div className="grid grid-cols-2 gap-4 opacity-75">
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">Employee ID <span className="text-red-500">*</span></label>
-              <input
-                type="text"
-                required
-                value={formData.matricule}
-                onChange={(e) => setFormData({ ...formData, matricule: e.target.value })}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700 bg-slate-100 transition-colors"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">Hire Date <span className="text-red-500">*</span></label>
-              <input
-                type="date"
-                required
-                value={formData.hire_date}
-                onChange={(e) => setFormData({ ...formData, hire_date: e.target.value })}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700 bg-slate-100 transition-colors"
-              />
-            </div>
+          <div>
+            <label className="block text-xs font-heading font-extrabold text-[#1c2b33] uppercase tracking-wider mb-1.5">
+              Position
+            </label>
+            <input
+              type="text"
+              value={formData.position}
+              onChange={(e) => setFormData({ ...formData, position: e.target.value })}
+              className="w-full px-3.5 py-2.5 bg-[#f1f5f8] border border-[#dde5ec] rounded-xl text-xs sm:text-sm font-semibold text-[#1c2b33] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#0064e0] focus:bg-white transition-all"
+            />
           </div>
 
-          <div className="grid grid-cols-2 gap-4 opacity-75">
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">Department</label>
-              <input
-                type="text"
-                value={formData.department}
-                onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700 bg-slate-100 transition-colors"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">Position</label>
-              <input
-                type="text"
-                value={formData.position}
-                onChange={(e) => setFormData({ ...formData, position: e.target.value })}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700 bg-slate-100 transition-colors"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-6 border-t border-slate-100">
-            <button 
-              type="button"
-              onClick={() => setIsEditModalOpen(false)}
-              disabled={isSubmitting}
-              className="px-6 py-2.5 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50"
-            >
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#dde5ec]">
+            <Button variant="secondary" onClick={() => setIsEditModalOpen(false)}>
               Cancel
-            </button>
-            <Button type="submit" disabled={isSubmitting} className="px-8 py-2.5 shadow-md">
-              {isSubmitting ? 'Saving...' : 'Save Changes'}
+            </Button>
+            <Button type="submit" loading={isSubmitting}>
+              Save Profile Changes
             </Button>
           </div>
         </form>

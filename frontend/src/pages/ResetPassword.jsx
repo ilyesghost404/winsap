@@ -1,47 +1,40 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { Loader2, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { CheckCircle2, ShieldCheck, ArrowLeft, Zap } from 'lucide-react';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 import PasswordInput from '../components/PasswordInput';
+import Button from '../components/Button';
 
 const ResetPassword = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const email = location.state?.email || '';
-  
+
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState('');
 
-  // Redirect if email is not present
   useEffect(() => {
-    if (!email) {
+    if (!email && !success) {
       toast.error('Session expired. Please request a new code.');
       navigate('/forgot-password');
     }
-  }, [email, navigate]);
-
-  const isStrong = newPassword.length >= 8 && /[A-Z]/.test(newPassword) && /[a-z]/.test(newPassword) && /[0-9]/.test(newPassword) && /[!@#$%^&*()[\]{}\\|;:'",.<>/?~_+-=]/.test(newPassword);
+  }, [email, navigate, success]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
-    if (!email) {
-      setError('Invalid or missing email.');
-      return;
-    }
-    
     if (newPassword !== confirmPassword) {
       setError('Passwords do not match');
       return;
     }
 
-    if (!isStrong) {
-      setError('Please choose a stronger password that meets all requirements');
+    if (newPassword.length < 8) {
+      setError('Password must be at least 8 characters');
       return;
     }
 
@@ -58,92 +51,100 @@ const ResetPassword = () => {
     }
   };
 
-  if (!email && !success) {
-    return null;
-  }
-
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-blue-900 py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
-      {/* Decorative background blobs */}
-      <div className="absolute top-[-10%] left-[-10%] w-[40rem] h-[40rem] rounded-full bg-blue-500/10 blur-[120px] pointer-events-none"></div>
-      
-      <div className="max-w-md w-full space-y-8 relative z-10">
-        <div className="flex flex-col items-center">
-          <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-2xl mb-4 border border-blue-400/20">
-            <ShieldCheck className="text-white" size={36} />
+    <div className="min-h-screen w-full flex items-center justify-center bg-[#f8fafc] py-12 px-4 sm:px-6 lg:px-8 relative overflow-hidden">
+      {/* Soft Blue Ambient Gradient Glow */}
+      <div className="absolute -top-40 -left-40 w-96 h-96 bg-blue-100/60 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-40 -right-40 w-96 h-96 bg-sky-100/60 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="max-w-md w-full space-y-6 relative z-10">
+        {/* Header */}
+        <div className="flex flex-col items-center text-center">
+          <div className="w-13 h-13 rounded-2xl bg-gradient-to-tr from-blue-600 to-sky-500 text-white flex items-center justify-center shadow-electric-glow mb-3.5 border border-blue-400/40">
+            <ShieldCheck size={26} />
           </div>
-          <h2 className="text-3xl font-extrabold text-white tracking-tight">Create New Password</h2>
-          <p className="mt-2 text-sm text-slate-400 text-center">
-            Your new password must be different from previous used passwords.
+          <div className="flex items-center gap-1.5 text-xs font-heading font-extrabold uppercase tracking-widest text-blue-600 mb-1">
+            <Zap size={14} />
+            <span>CREDENTIAL SECURITY</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-heading font-black tracking-tight text-[#172033]">
+            Create New Password
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+            Choose a new secure password for <strong className="text-[#172033] font-mono">{email}</strong>
           </p>
         </div>
 
-        <div className="backdrop-blur-xl bg-slate-900/60 border border-slate-700/50 rounded-3xl p-8 shadow-2xl shadow-black/40">
+        {/* Card */}
+        <div className="bg-white rounded-3xl border border-[#d9e7f5] p-6 sm:p-8 shadow-blue-sm">
           {success ? (
-            <div className="text-center space-y-6">
-              <div className="mx-auto w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center border border-emerald-500/30">
-                <CheckCircle2 className="text-emerald-400" size={32} />
+            <div className="text-center space-y-4 py-4">
+              <div className="mx-auto w-16 h-16 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center border border-emerald-200 shadow-sm">
+                <CheckCircle2 size={32} />
               </div>
               <div>
-                <h3 className="text-xl font-bold text-white mb-2">Password Reset Successfully</h3>
-                <p className="text-slate-300 text-sm">
-                  You can now log in with your new password. All your previous sessions have been securely logged out.
+                <h3 className="text-base font-black font-heading text-[#172033]">Password Reset Successfully</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  You can now log in using your newly created password.
                 </p>
               </div>
-              <button
-                onClick={() => navigate('/login')}
-                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-2xl text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 focus:outline-none transition-all duration-300 shadow-lg"
-              >
-                Go to Login
-              </button>
+              <Button onClick={() => navigate('/login')} className="w-full mt-3">
+                Return to Login
+              </Button>
             </div>
           ) : (
-            <form className="space-y-6" onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <div className="bg-red-500/15 border border-red-500/35 rounded-2xl p-4 text-sm text-red-300 flex items-center gap-2 animate-shake">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span>
-                  <span>{error}</span>
+                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700">
+                  {error}
                 </div>
               )}
 
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-slate-300 mb-1">New Password</label>
-                <PasswordInput 
+              <div>
+                <label className="block text-xs font-heading font-extrabold text-[#172033] uppercase tracking-wider mb-1.5">
+                  New Password <span className="text-rose-500">*</span>
+                </label>
+                <PasswordInput
+                  required
+                  placeholder="Min 8 characters"
                   value={newPassword}
-                  onChange={setNewPassword}
-                  disabled={isSubmitting}
-                  placeholder="Enter new password"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-slate-300 mb-1">Confirm Password</label>
-                <PasswordInput 
-                  value={confirmPassword}
-                  onChange={setConfirmPassword}
-                  disabled={isSubmitting}
-                  placeholder="Confirm new password"
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-[#f0f7ff] border border-[#d9e7f5] rounded-xl text-sm font-semibold text-[#172033] focus:bg-white"
                 />
               </div>
 
               <div>
-                <button
-                  type="submit"
-                  disabled={isSubmitting || !isStrong || newPassword !== confirmPassword}
-                  className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-2xl text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg shadow-blue-600/20"
+                <label className="block text-xs font-heading font-extrabold text-[#172033] uppercase tracking-wider mb-1.5">
+                  Confirm New Password <span className="text-rose-500">*</span>
+                </label>
+                <PasswordInput
+                  required
+                  placeholder="Re-enter new password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-[#f0f7ff] border border-[#d9e7f5] rounded-xl text-sm font-semibold text-[#172033] focus:bg-white"
+                />
+              </div>
+
+              <Button type="submit" loading={isSubmitting} className="w-full mt-2" size="md">
+                Reset Password
+              </Button>
+
+              <div className="text-center pt-3 border-t border-[#d9e7f5]">
+                <Link
+                  to="/login"
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-blue-600 transition-colors"
                 >
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="animate-spin" size={18} />
-                      Resetting...
-                    </>
-                  ) : (
-                    'Reset Password'
-                  )}
-                </button>
+                  <ArrowLeft size={14} /> Back to Sign In
+                </Link>
               </div>
             </form>
           )}
+        </div>
+
+        <div className="text-center text-xs text-slate-400 flex items-center justify-center gap-1.5">
+          <ShieldCheck size={14} className="text-blue-600" />
+          <span className="font-semibold">Encrypted with TLS 1.3 · AbsenceFlow</span>
         </div>
       </div>
     </div>

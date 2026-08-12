@@ -6,6 +6,7 @@ const crypto = require("crypto");
 const UAParser = require("ua-parser-js");
 const emailService = require("../utils/emailService");
 const { validateStrictPassword } = require("../utils/passwordUtils");
+const { getFrontendUrl } = require("../utils/frontendUrl");
 
 const JWT_SECRET = process.env.JWT_SECRET || "absenceflow_jwt_secret_key_12345";
 
@@ -133,7 +134,7 @@ const forgotPassword = async (req, res) => {
     await User.savePasswordResetToken(user.id, tokenHash, expiresAt);
 
     // Send email
-    const resetLink = `${process.env.FRONTEND_URL || "http://localhost:5173"}/reset-password?token=${resetToken}`;
+    const resetLink = `${getFrontendUrl()}/reset-password?token=${resetToken}`;
     await emailService.sendPasswordResetEmail(user.email, user.username, resetLink);
 
     // Generic response
@@ -347,12 +348,17 @@ const getUsers = async (req, res) => {
 
 const createUser = async (req, res) => {
   const ipAddress = req.ip || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  const db = require("../config/database");
 
   try {
-    const { username, email, role, employee_id, password } = req.body;
+    const { username, email, role, employee_id } = req.body;
 
     if (!username || !email || !role) {
-      return res.status(400).json({ success: false, message: "Username, email, and role are required" });
+      return res.status(400).json({ success: false, message: "Username, Email, and Role are required" });
+    }
+
+    if (role === 'employee' && !employee_id) {
+      return res.status(400).json({ success: false, message: "Please select an employee to link for Employee accounts" });
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -360,33 +366,31 @@ const createUser = async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid email address format" });
     }
 
-    let password_hash;
-    let account_status;
-    let is_verified;
-    let activationToken = null;
-    let activationTokenExpiry = null;
+    const finalEmployeeId = role === 'employee' ? parseInt(employee_id, 10) : (employee_id ? parseInt(employee_id, 10) : null);
 
-    if (password) {
-      if (!validateStrictPassword(password)) {
-        return res.status(400).json({ success: false, message: "Password is too weak. It must be at least 8 characters long and contain at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character." });
+    if (finalEmployeeId) {
+      const existingUser = await db.query("SELECT id FROM users WHERE employee_id = $1", [finalEmployeeId]);
+      if (existingUser.rows.length > 0) {
+        return res.status(400).json({ success: false, message: "Selected employee already has a user account linked" });
       }
-      password_hash = await bcrypt.hash(password, 10);
-      account_status = 'Active';
-      is_verified = true;
-    } else {
-      password_hash = "PENDING_ACTIVATION_" + crypto.randomBytes(16).toString("hex");
-      account_status = 'Pending';
-      is_verified = true; // Admin created user email is pre-verified by Admin
-      activationToken = crypto.randomBytes(32).toString("hex");
-      activationTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
     }
+
+    const password_hash = "PENDING_ACTIVATION_" + crypto.randomBytes(16).toString("hex");
+    const account_status = 'Pending Activation';
+    const is_verified = false;
+    const activationToken = crypto.randomBytes(32).toString("hex");
+    const activationTokenExpiry = new Date(Date.now() + 72 * 60 * 60 * 1000); // 72 hours
+
+    const nowIso = new Date().toISOString();
+    console.log(`[${nowIso}] 👤 [Email Step 1] User account created in DB: username='${username}', email='${email}'`);
+    console.log(`[${nowIso}] 🔑 [Email Step 2] Activation token generated: expiry='${activationTokenExpiry.toISOString()}'`);
 
     const newUser = await User.create({
       username,
       email,
       password_hash,
       role,
-      employee_id,
+      employee_id: finalEmployeeId,
       account_status,
       is_verified,
       is_active: true,
@@ -394,17 +398,23 @@ const createUser = async (req, res) => {
       activation_token_expiry: activationTokenExpiry
     });
 
-    if (!password && activationToken) {
-      const activationLink = `${process.env.FRONTEND_URL || "http://localhost:5173"}/activate-account?token=${activationToken}`;
-      await emailService.sendActivationEmail(email, username, activationLink);
+    // Update email in employee record if needed
+    if (finalEmployeeId) {
+      await db.query("UPDATE employees SET email = $1 WHERE id = $2 AND (email IS NULL OR email = '')", [email, finalEmployeeId]);
     }
+
+    // Send activation email asynchronously (non-blocking)
+    const activationLink = `${getFrontendUrl()}/activate-account/${activationToken}`;
+    emailService.sendActivationEmail(email, username, activationLink).catch((emailErr) => {
+      console.warn("⚠️ Activation email failed to send, but user account was created successfully:", emailErr.message);
+    });
 
     // Log activity
     await User.recordActivity(
       req.user.id,
       "user_created",
       newUser.id,
-      `User '${username}' created with role '${role}' by admin '${req.user.username}'.`,
+      `User '${username}' created with role '${role}' by admin '${req.user.username}'. Activation pending.`,
       ipAddress
     );
 
@@ -424,20 +434,33 @@ const verifyActivationToken = async (req, res) => {
     const { token } = req.query;
 
     if (!token) {
-      return res.status(400).json({ success: false, message: "Token is required" });
+      return res.status(400).json({ success: false, message: "Invalid activation link.", reason: "invalid" });
     }
 
-    const user = await User.getByActivationToken(token);
-    if (!user) {
-      return res.status(400).json({ success: false, message: "Invalid or expired activation token" });
+    const tokenCheck = await User.checkActivationToken(token);
+    if (tokenCheck.status !== 'valid') {
+      return res.status(400).json({ 
+        success: false, 
+        message: tokenCheck.message, 
+        reason: tokenCheck.status 
+      });
     }
 
-    res.json({ success: true, message: "Token is valid" });
+    res.json({ 
+      success: true, 
+      message: "Token is valid",
+      data: {
+        username: tokenCheck.user.username,
+        email: tokenCheck.user.email,
+        employee_id: tokenCheck.user.employee_id
+      }
+    });
   } catch (error) {
     console.error("VerifyActivationToken error:", error);
-    res.status(500).json({ success: false, message: "Failed to verify token" });
+    res.status(500).json({ success: false, message: "Failed to verify token", reason: "invalid" });
   }
 };
+
 const activateAccount = async (req, res) => {
   try {
     const { token, password } = req.body;
@@ -450,37 +473,99 @@ const activateAccount = async (req, res) => {
       return res.status(400).json({ success: false, message: "Password is too weak. It must be at least 8 characters long and contain at least 1 uppercase letter, 1 lowercase letter, 1 number, and 1 special character." });
     }
 
-    const user = await User.getByActivationToken(token);
-    if (!user) {
-      return res.status(400).json({ success: false, message: "Invalid or expired activation token" });
+    const tokenCheck = await User.checkActivationToken(token);
+    if (tokenCheck.status !== 'valid') {
+      return res.status(400).json({ 
+        success: false, 
+        message: tokenCheck.message,
+        reason: tokenCheck.status 
+      });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
+    await User.activateAccount(tokenCheck.user.id, passwordHash);
 
-    let requiresFace = false;
-    if (user.employee_id) {
-      const faceProfile = await FaceProfile.getByEmployeeId(user.employee_id);
-      requiresFace = !faceProfile || faceProfile.status !== 'active';
-    }
-
-    if (requiresFace) {
-      await User.savePasswordDuringActivation(user.id, passwordHash);
-      res.json({ 
-        success: true, 
-        message: "Password set. Biometric registration required.", 
-        data: { employeeId: user.employee_id, requiresFace: true } 
-      });
-    } else {
-      await User.activateAccount(user.id, passwordHash);
-      res.json({ 
-        success: true, 
-        message: "Account activated successfully.", 
-        data: { employeeId: user.employee_id || null, requiresFace: false } 
-      });
-    }
+    res.json({ 
+      success: true, 
+      message: "Account activated successfully.", 
+      data: { employeeId: tokenCheck.user.employee_id || null } 
+    });
   } catch (error) {
     console.error("ActivateAccount error:", error);
     res.status(500).json({ success: false, message: "Failed to activate account" });
+  }
+};
+
+const resendActivationEmail = async (req, res) => {
+  const ipAddress = req.ip || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  try {
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ success: false, message: "User ID is required" });
+    }
+
+    const user = await User.getById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    if (user.account_status === 'Active' && user.is_verified) {
+      return res.status(400).json({ success: false, message: "Account is already active" });
+    }
+
+    const activationToken = crypto.randomBytes(32).toString("hex");
+    const activationTokenExpiry = new Date(Date.now() + 72 * 60 * 60 * 1000); // 72 hours
+
+    await User.updateActivationToken(userId, activationToken, activationTokenExpiry);
+
+    const activationLink = `${getFrontendUrl()}/activate-account/${activationToken}`;
+    await emailService.sendActivationEmail(user.email, user.username, activationLink);
+
+    await User.recordActivity(
+      req.user.id,
+      "activation_email_resent",
+      userId,
+      `Resent activation email to user '${user.username}' (${user.email}).`,
+      ipAddress
+    );
+
+    res.json({ success: true, message: "Activation email resent successfully" });
+  } catch (error) {
+    console.error("ResendActivationEmail error:", error);
+    res.status(500).json({ success: false, message: "Failed to resend activation email" });
+  }
+};
+
+const toggleUserStatus = async (req, res) => {
+  const ipAddress = req.ip || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+  try {
+    const { id } = req.params;
+    const { is_active } = req.body;
+
+    if (parseInt(id) === req.user.id) {
+      return res.status(400).json({ success: false, message: "You cannot disable your own account" });
+    }
+
+    const user = await User.getById(id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const newStatus = is_active ? (user.is_verified ? 'Active' : 'Pending Activation') : 'Disabled';
+    const updated = await User.setAccountStatus(id, newStatus, is_active);
+
+    await User.recordActivity(
+      req.user.id,
+      is_active ? "account_enabled" : "account_disabled",
+      parseInt(id),
+      `Account '${user.username}' ${is_active ? 'enabled' : 'disabled'} by admin '${req.user.username}'`,
+      ipAddress
+    );
+
+    res.json({ success: true, message: `Account ${is_active ? 'enabled' : 'disabled'} successfully`, data: updated });
+  } catch (error) {
+    console.error("ToggleUserStatus error:", error);
+    res.status(500).json({ success: false, message: "Failed to update account status" });
   }
 };
 
@@ -991,5 +1076,7 @@ module.exports = {
   deleteUser,
   activateAccount,
   verifyActivationToken,
+  resendActivationEmail,
+  toggleUserStatus,
   skipFaceIdSetup
 };

@@ -54,8 +54,14 @@ export const getDetailedAbsences = async (filters = {}) => {
 };
 
 // Export absences to Excel (custom filter export) — triggers file download
-export const exportToExcel = async (filters = {}) => {
-  const params = buildParams(filters);
+export const exportToExcel = async (filtersOrYear = {}, maybeMonth) => {
+  let queryFilters = filtersOrYear;
+  if (typeof filtersOrYear === 'number') {
+    const year = filtersOrYear;
+    const month = maybeMonth || new Date().getMonth() + 1;
+    queryFilters = { month: `${year}-${String(month).padStart(2, '0')}` };
+  }
+  const params = buildParams(queryFilters);
 
   const token =
     localStorage.getItem('token') || sessionStorage.getItem('token');
@@ -78,7 +84,7 @@ export const exportToExcel = async (filters = {}) => {
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `WinSAP_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
+  a.download = `AbsenceFlow_Report_${new Date().toISOString().split('T')[0]}.xlsx`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -87,8 +93,16 @@ export const exportToExcel = async (filters = {}) => {
 
 // Get monthly attendance matrix report data
 export const getAttendanceMatrix = async (year, month) => {
-  const response = await api.get(`/reports/attendance-matrix?year=${year}&month=${month}`);
-  return response.data.data;
+  const currentYear = year || new Date().getFullYear();
+  const currentMonth = month || (new Date().getMonth() + 1);
+  const response = await api.get(`/reports/attendance-matrix?year=${currentYear}&month=${currentMonth}`);
+  return response.data?.data || response.data || {
+    matrix: [],
+    daysInMonth: Array.from({ length: new Date(currentYear, currentMonth, 0).getDate() }, (_, i) => i + 1),
+    totalDays: new Date(currentYear, currentMonth, 0).getDate(),
+    year: currentYear,
+    month: currentMonth
+  };
 };
 
 // Print current report view
@@ -150,6 +164,60 @@ export const exportEmployeeYearlyPdf = async (employeeId, year) => {
   const a = document.createElement('a');
   a.href = url;
   a.download = `Employee_Report_${employeeId}_${year}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+};
+
+// Export full team yearly report to Excel
+export const exportYearlyTeamExcel = async (year) => {
+  const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+  const response = await fetch(
+    `${api.defaults.baseURL}/reports/team/year/${year}/excel`,
+    {
+      headers: {
+        Authorization: token ? `Bearer ${token}` : '',
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to export Team Excel report');
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Yearly_CRA_Report_${year}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+};
+
+// Export full team yearly report to PDF
+export const exportYearlyTeamPdf = async (year) => {
+  const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+  const response = await fetch(
+    `${api.defaults.baseURL}/reports/team/year/${year}/pdf`,
+    {
+      headers: {
+        Authorization: token ? `Bearer ${token}` : '',
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error('Failed to export Team PDF report');
+  }
+
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Yearly_CRA_Report_${year}.pdf`;
   document.body.appendChild(a);
   a.click();
   a.remove();

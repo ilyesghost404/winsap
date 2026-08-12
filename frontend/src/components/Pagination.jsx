@@ -25,48 +25,52 @@ const Pagination = ({ page, totalPages, total, limit, onPageChange }) => {
   const endRecord = Math.min(page * limit, total);
 
   return (
-    <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 border-t border-slate-100 bg-white">
-      <div className="text-sm text-slate-500 mb-4 sm:mb-0">
-        Showing <span className="font-semibold text-slate-700">{total === 0 ? 0 : startRecord}</span> to <span className="font-semibold text-slate-700">{endRecord}</span> of <span className="font-semibold text-slate-700">{total}</span> records
+    <div className="flex flex-col sm:flex-row items-center justify-between px-5 py-3.5 border-t border-slate-100 bg-white gap-3">
+      <div className="text-xs text-slate-500 font-medium">
+        Showing <span className="font-semibold text-slate-800">{total === 0 ? 0 : startRecord}</span> to{' '}
+        <span className="font-semibold text-slate-800">{endRecord}</span> of{' '}
+        <span className="font-semibold text-slate-800">{total}</span> records
       </div>
-      
-      <div className="flex items-center space-x-2">
+
+      <div className="flex items-center space-x-1.5">
         <button
           onClick={() => onPageChange(page - 1)}
           disabled={page === 1}
-          className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          title="Previous Page"
         >
-          <ChevronLeft size={18} />
+          <ChevronLeft size={16} />
         </button>
-        
+
         <div className="flex items-center space-x-1">
-          {getPageNumbers().map((p, i) => (
+          {getPageNumbers().map((p, i) =>
             p === '...' ? (
-              <div key={`ellipsis-${i}`} className="px-2 text-slate-400">
-                <MoreHorizontal size={18} />
+              <div key={`ellipsis-${i}`} className="px-1 text-slate-400">
+                <MoreHorizontal size={14} />
               </div>
             ) : (
               <button
                 key={p}
                 onClick={() => onPageChange(p)}
-                className={`w-9 h-9 flex items-center justify-center rounded-xl text-sm font-medium transition-colors ${
+                className={`min-w-[32px] h-8 px-2 flex items-center justify-center rounded-lg text-xs font-semibold transition-all ${
                   page === p
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                    ? 'bg-blue-600 text-white shadow-xs'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
                 {p}
               </button>
             )
-          ))}
+          )}
         </div>
 
         <button
           onClick={() => onPageChange(page + 1)}
           disabled={page === totalPages}
-          className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          title="Next Page"
         >
-          <ChevronRight size={18} />
+          <ChevronRight size={16} />
         </button>
       </div>
     </div>

@@ -3,6 +3,7 @@ const router = express.Router();
 const {
     getEmployees,
     getEmployeeById,
+    getUnlinkedEmployees,
     createEmployee,
     updateEmployee,
     deleteEmployee,
@@ -13,7 +14,7 @@ const { requireAuth, authorizeRoles } = require("../middleware/authMiddleware");
 
 // Helper middleware to check if employee can view this profile
 const canViewEmployee = (req, res, next) => {
-  if (req.user.role === "manager") {
+  if (req.user.role === "manager" || req.user.role === "admin") {
     return next();
   }
   if (req.user.role === "employee" && req.user.employee_id === parseInt(req.params.id)) {
@@ -23,12 +24,13 @@ const canViewEmployee = (req, res, next) => {
 };
 
 router.get("/", requireAuth, authorizeRoles("admin", "manager"), getEmployees);
+router.get("/unlinked", requireAuth, authorizeRoles("admin", "manager"), getUnlinkedEmployees);
 router.get("/:id", requireAuth, canViewEmployee, getEmployeeById);
-router.get("/:id/leave-balance", requireAuth, authorizeRoles("manager"), getEmployeeLeaveBalance);
-router.post("/", requireAuth, authorizeRoles("manager"), createEmployee);
-router.put("/:id", requireAuth, authorizeRoles("manager"), updateEmployee);
-router.delete("/:id", requireAuth, authorizeRoles("manager"), deleteEmployee);
-router.post("/:id/register-face", requireAuth, authorizeRoles("manager"), registerFace);
+router.get("/:id/leave-balance", requireAuth, authorizeRoles("admin", "manager"), getEmployeeLeaveBalance);
+router.post("/", requireAuth, authorizeRoles("admin", "manager"), createEmployee);
+router.put("/:id", requireAuth, authorizeRoles("admin", "manager"), updateEmployee);
+router.delete("/:id", requireAuth, authorizeRoles("admin", "manager"), deleteEmployee);
+router.post("/:id/register-face", requireAuth, authorizeRoles("admin", "manager"), registerFace);
 
 module.exports = router;
 

@@ -1,18 +1,63 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=Sora:wght@100..800&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap');
 @import "tailwindcss";
 @source "./";
 
-body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+@layer base {
+  :root {
+    --font-heading: 'Sora', 'Plus Jakarta Sans', sans-serif;
+    --font-sans: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+
+    /* Meta Brand Palette Tokens */
+    --meta-bright-blue: #075adf;
+    --meta-deep-blue: #0552b1;
+    --meta-light-bg: #f1f5f8;
+    --meta-dark-slate: #1c2b33;
+
+    --primary: #0064e0;
+    --primary-dark: #004fb3;
+    --primary-hover: #0039a3;
+    --electric-blue: #005cfb;
+    --light-blue: #e7f0fa;
+    --soft-blue: #f1f5f8;
+    --main-bg: #f1f5f8;
+    --white: #ffffff;
+    --border-color: #dde5ec;
+    --text-primary: #1c2b33;
+    --text-secondary: #5f7380;
+    --success: #16a34a;
+    --warning: #f59e0b;
+    --error: #ef4444;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--main-bg);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.035em;
+    color: var(--text-primary);
+  }
 }
 
-/* Custom scrollbar for modern feel */
+/* Custom modern scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: rgba(231, 240, 250, 0.5);
 }
 
 ::-webkit-scrollbar-thumb {
@@ -21,50 +66,157 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #0064e0;
 }
 
-/* Custom animations for the redesign */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+/* Light scrollbar for sidebar & panels */
+.light-scrollbar::-webkit-scrollbar {
+  width: 5px;
 }
 
-@keyframes slideUp {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
+.light-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+.light-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
 }
 
-.animate-fade-in {
-  animation: fadeIn 0.4s ease-out both;
+.light-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.45);
 }
 
-.animate-slide-up {
-  animation: slideUp 0.5s ease-out both;
-}
-
-.stagger-1 { animation-delay: 0.05s; }
-.stagger-2 { animation-delay: 0.1s; }
-.stagger-3 { animation-delay: 0.15s; }
-.stagger-4 { animation-delay: 0.2s; }
-.stagger-5 { animation-delay: 0.25s; }
-
-/* Custom scrollbar for modals */
+/* Custom scrollbar for tables & modals */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
+  height: 5px;
 }
+
 .custom-scrollbar::-webkit-scrollbar-track {
   background: transparent;
 }
+
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #e2e8f0;
-  border-radius: 3px;
-}
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Typography classes */
+.font-heading {
+  font-family: var(--font-heading);
+}
+
+.font-mono-code {
+  font-family: var(--font-mono);
+}
+
+/* ── Meta Exact Gradients ─────────────────────────────────────── */
+
+/* Meta Action Gradient: #0064E0 -> #0082FB */
+.gradient-primary {
+  background: linear-gradient(135deg, #0064e0 0%, #0064fb 100%);
+}
+
+.gradient-primary-hover {
+  background: linear-gradient(135deg, #004fb3 0%, #0064e0 100%);
+}
+
+/* Meta Hero Gradient: #1C2B33 -> #0064E0 -> #0082FB */
+.gradient-premium {
+  background: linear-gradient(135deg, #1c2b33 0%, #0064e0 60%, #0054fb 100%);
+}
+
+/* Meta Electric Highlight Gradient */
+.gradient-cyan {
+  background: linear-gradient(135deg, #0064e0 0%, #0060fb 100%);
+}
+
+/* Soft Light Blue Gradient */
+.gradient-soft {
+  background: linear-gradient(135deg, #e7f0fa 0%, #f1f5f8 100%);
+}
+
+/* Sidebar Dark Slate Gradient: Meta Dark Slate #1C2B33 -> Deep Charcoal #152229 */
+.gradient-sidebar {
+  background: linear-gradient(180deg, #1c2b33 0%, #152229 100%);
+}
+
+/* Card header soft gradient */
+.gradient-card-header {
+  background: linear-gradient(90deg, #f1f5f8 0%, #e7f0fa 100%);
+}
+
+/* ── Shadows & Depth ─────────────────────────────────────────── */
+.shadow-premium-sm {
+  box-shadow: 0 4px 20px rgba(28, 43, 51, 0.04);
+}
+
+.shadow-premium-card {
+  box-shadow: 0 8px 24px rgba(28, 43, 51, 0.07);
+}
+
+.shadow-electric-glow {
+  box-shadow: 0 6px 20px rgba(0, 100, 224, 0.35);
+}
+
+.shadow-cyan-glow {
+  box-shadow: 0 6px 20px rgba(0, 130, 251, 0.35);
+}
+
+.shadow-blue-glow {
+  box-shadow: 0 0 20px -3px rgba(0, 100, 224, 0.3);
+}
+
+/* ── Animations ──────────────────────────────────────────────── */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Interactive hover */
+.interactive-hover {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.interactive-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(28, 43, 51, 0.12);
+}
+
+/* ── DO NOT TOUCH THE SIDEBAR TYPOGRAPHY ── */
+.sidebar-container,
+.sidebar-container * {
+  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
 }

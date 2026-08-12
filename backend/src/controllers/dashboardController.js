@@ -11,8 +11,9 @@ const getDashboardStats = async (req, res) => {
 
     // Retrieve next upcoming holiday (used by all dashboards)
     const nextHolidayResult = await db.query(`
-      SELECT * FROM holidays 
-      WHERE holiday_date >= CURRENT_DATE
+      SELECT id, holiday_date, COALESCE(end_date, holiday_date) AS end_date, name, type, description 
+      FROM holidays 
+      WHERE COALESCE(end_date, holiday_date) >= CURRENT_DATE
       ORDER BY holiday_date ASC
       LIMIT 1
     `);
@@ -145,12 +146,11 @@ const getDashboardStats = async (req, res) => {
     `, [today]);
     const employeesOnLeaveToday = parseInt(onLeaveTodayResult.rows[0].count);
 
-    const holidaysResult = await db.query(`
-      SELECT COUNT(*) FROM holidays 
-      WHERE EXTRACT(YEAR FROM holiday_date) = $1 
-      AND EXTRACT(MONTH FROM holiday_date) = $2
-    `, [currentYear, currentMonth]);
-    const holidaysThisMonth = parseInt(holidaysResult.rows[0].count);
+    const startOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`;
+    const lastDayNum = new Date(currentYear, currentMonth, 0).getDate();
+    const endOfMonth = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`;
+    const holidaysThisMonthList = await getHolidays(startOfMonth, endOfMonth);
+    const holidaysThisMonth = holidaysThisMonthList.length;
 
     const absencesThisMonthResult = await db.query(`
       SELECT COUNT(*) FROM absences 
@@ -563,23 +563,11 @@ const getSystemHealth = async (req, res) => {
 // Helper
 // ─────────────────────────────────────────────────────────────────────────────
 const getWorkingDaysInMonth = async (year, month) => {
-  const start = new Date(year, month - 1, 1);
-  const end = new Date(year, month, 0);
-
-  let workingDays = 0;
-  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-    const day = d.getDay();
-    if (day !== 0 && day !== 6) workingDays++;
-  }
-
-  const holidaysResult = await db.query(`
-    SELECT COUNT(*) FROM holidays
-    WHERE EXTRACT(YEAR FROM holiday_date) = $1 
-    AND EXTRACT(MONTH FROM holiday_date) = $2
-    AND EXTRACT(DOW FROM holiday_date) NOT IN (0, 6)
-  `, [year, month]);
-
-  return Math.max(1, workingDays - parseInt(holidaysResult.rows[0].count));
+  const startOfMonth = `${year}-${String(month).padStart(2, '0')}-01`;
+  const lastDayNum = new Date(year, month, 0).getDate();
+  const endOfMonth = `${year}-${String(month).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`;
+  const holidays = await getHolidays(startOfMonth, endOfMonth);
+  return countWorkingDays(startOfMonth, endOfMonth, holidays);
 };
 
 module.exports = {

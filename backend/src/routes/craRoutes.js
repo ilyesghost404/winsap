@@ -12,7 +12,10 @@ const {
   approveEntry,
   rejectEntry,
   getStats,
-  getLiveActivities
+  getMonthlyStats,
+  getLiveActivities,
+  getControlCenterData,
+  getEmployeeMonitorSummary
 } = require("../controllers/craController");
 const { requireAuth, authorizeRoles } = require("../middleware/authMiddleware");
 
@@ -21,8 +24,11 @@ router.use(requireAuth);
 
 // Static paths first
 router.get("/stats", getStats);
+router.get("/monthly-stats", getMonthlyStats);
 router.get("/my-activities", getMyActivities);
 router.get("/live", authorizeRoles("manager"), getLiveActivities);
+router.get("/control-center", authorizeRoles("manager"), getControlCenterData);
+router.get("/employee-summary/:employeeId", authorizeRoles("manager"), getEmployeeMonitorSummary);
 
 // Manager-only
 router.get("/", authorizeRoles("manager"), getAllActivities);

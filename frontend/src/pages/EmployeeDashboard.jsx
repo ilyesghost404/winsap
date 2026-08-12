@@ -1,15 +1,17 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
 import {
-  Users, Clock, CheckCircle2, CalendarDays, Calendar as CalendarIcon, 
-  Activity, CalendarOff, Hash, Briefcase, Calendar, ChevronRight, ClipboardList
+  Users, Clock, CheckCircle2, CalendarDays, Calendar as CalendarIcon,
+  Activity, CalendarOff, Briefcase, ChevronRight, ClipboardList, Plus, Zap
 } from 'lucide-react';
 import Card from '../components/Card';
 import StatsCard from '../components/StatsCard';
+import StatusBadge from '../components/StatusBadge';
 import LoadingSpinner from '../components/LoadingSpinner';
+import Button from '../components/Button';
 import { getDashboardStats } from '../services/dashboardService';
 import { getCraStats } from '../services/craService';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 const parseLocalDate = (dateStr) => {
   if (!dateStr) return null;
@@ -18,34 +20,51 @@ const parseLocalDate = (dateStr) => {
   return new Date(year, month - 1, day);
 };
 
-const CircularProgress = ({ value, max, label, colorClass }) => {
-  const radius = 36;
+const CircularProgress = ({ value, max, label, colorClass = 'text-[#2563eb]' }) => {
+  const radius = 34;
   const circumference = 2 * Math.PI * radius;
   const validValue = Math.min(Math.max(0, value), max);
   const strokeDashoffset = circumference - (validValue / max) * circumference;
 
   return (
     <div className="flex flex-col items-center justify-center relative">
-      <svg className="w-24 h-24 transform -rotate-90">
-        <circle cx="48" cy="48" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" className="text-slate-100" />
-        <circle 
-          cx="48" cy="48" r={radius} stroke="currentColor" strokeWidth="8" fill="transparent" 
-          strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} 
-          strokeLinecap="round" className={`transition-all duration-1000 ease-out ${colorClass}`} 
+      <svg className="w-22 h-22 transform -rotate-90">
+        <circle
+          cx="44"
+          cy="44"
+          r={radius}
+          stroke="currentColor"
+          strokeWidth="6"
+          fill="transparent"
+          className="text-[#dbeafe]"
+        />
+        <circle
+          cx="44"
+          cy="44"
+          r={radius}
+          stroke="currentColor"
+          strokeWidth="6"
+          fill="transparent"
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          className={`transition-all duration-1000 ease-out ${colorClass}`}
         />
       </svg>
-      <div className="absolute top-10 flex flex-col items-center justify-center">
-        <span className="text-xl font-bold text-slate-800">{value}</span>
+      <div className="absolute top-7.5 flex flex-col items-center justify-center">
+        <span className="text-lg font-black font-heading text-[#172033] leading-none">{value}</span>
+        <span className="text-[10px] text-slate-400 font-semibold mt-0.5">/{max}d</span>
       </div>
-      <span className="text-xs font-semibold text-slate-500 mt-2">{label}</span>
+      <span className="text-xs font-bold text-slate-700 mt-2 text-center">{label}</span>
     </div>
   );
 };
 
 const EmployeeDashboard = () => {
   const [stats, setStats] = useState(null);
-  const [craStats, setCraStats] = useState({ total: 0, pending: 0, approved: 0, rejected: 0 });
+  const [craStats, setCraStats] = useState({ total: 0, pending: 0, approved: 0, rejected: 0, in_progress: 0 });
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -72,8 +91,8 @@ const EmployeeDashboard = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-20 min-h-screen">
-        <LoadingSpinner size="lg" />
+      <div className="flex items-center justify-center py-32">
+        <LoadingSpinner size="lg" text="Loading personal dashboard…" />
       </div>
     );
   }
@@ -88,148 +107,208 @@ const EmployeeDashboard = () => {
   const usedSick = Math.max(0, 5 - remainingSick);
 
   return (
-    <div className="min-h-screen pb-12">
-      <div className="mb-8 bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-800 tracking-tight">
-            Welcome back, {info.first_name || 'Employee'}! 👋
-          </h1>
-          <p className="text-slate-500 font-medium mt-1">Here is your personal absence overview and metrics</p>
+    <div className="space-y-6">
+      {/* ── Premium Blue Hero Banner ─────────────────────────────────── */}
+      <div className="rounded-3xl bg-gradient-to-r from-[#1c2b33] to-[#0064e0] p-6 sm:p-8 text-white shadow-electric-glow border border-blue-400/30 relative overflow-hidden">
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-widest text-blue-100 font-heading mb-1">
+              <Zap size={14} className="text-blue-100" />
+              <span>Employee Portal</span>
+            </div>
+            <h1 className="text-2xl sm:text-4xl font-heading font-black tracking-tight text-white">
+              Welcome back, {info.first_name || 'Employee'}! 👋
+            </h1>
+            <p className="text-blue-100 text-xs sm:text-sm mt-1 max-w-xl">
+              Here is your personal absence summary, leave balances, and daily activity overview.
+            </p>
+          </div>
+
+          <Button variant="secondary" icon={Plus} onClick={() => navigate('/leave-requests')}>
+            Request Leave
+          </Button>
         </div>
-        <Link 
-          to="/leave-requests" 
-          className="inline-flex items-center justify-center gap-2 py-3 px-6 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-700 transition-all shadow-md shadow-blue-500/20 hover:shadow-blue-500/40"
-        >
-          Request Absence
-        </Link>
+
+        {/* Ambient Glow */}
+        <div className="absolute -right-20 -top-20 w-80 h-80 bg-white/15 rounded-full blur-3xl pointer-events-none" />
       </div>
 
       {/* Statistics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-6 mb-8">
-        <StatsCard title="Paid Leave" value={`${remainingVacation} days`} icon={CalendarDays} colorClass="text-blue-600" bgClass="bg-blue-50" borderClass="border-t-blue-500" />
-        <StatsCard title="Sick Leave" value={`${remainingSick} days`} icon={CalendarDays} colorClass="text-rose-600" bgClass="bg-rose-50" borderClass="border-t-rose-500" />
-        <StatsCard title="Pending Requests" value={stats.pendingRequests || 0} icon={Clock} colorClass="text-amber-500" bgClass="bg-amber-50" borderClass="border-t-amber-500" />
-        <StatsCard title="Approved Absences" value={stats.approvedRequests || 0} icon={CheckCircle2} colorClass="text-emerald-600" bgClass="bg-emerald-50" borderClass="border-t-emerald-500" />
-        <StatsCard title="Total Absences" value={stats.totalAbsences || 0} icon={CalendarOff} colorClass="text-violet-600" bgClass="bg-violet-50" borderClass="border-t-violet-500" />
-        <StatsCard 
-          title="Next Holiday" 
-          value={stats.nextHoliday?.name || 'None'} 
-          subtitle={stats.nextHoliday ? parseLocalDate(stats.nextHoliday.holiday_date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
-          icon={CalendarIcon} 
-          colorClass="text-pink-600" 
-          bgClass="bg-pink-50" 
-          borderClass="border-t-pink-500"
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+        <StatsCard
+          title="Paid Leave"
+          value={`${remainingVacation}d`}
+          subtitle="Remaining balance"
+          icon={CalendarDays}
+          variant="softBlue"
+        />
+        <StatsCard
+          title="Sick Leave"
+          value={`${remainingSick}d`}
+          subtitle="Remaining balance"
+          icon={CalendarDays}
+          colorClass="text-rose-600"
+          bgClass="bg-rose-50 border border-rose-200"
+        />
+        <StatsCard
+          title="Pending Requests"
+          value={stats.pendingRequests || 0}
+          subtitle="Awaiting review"
+          icon={Clock}
+          colorClass="text-amber-600"
+          bgClass="bg-amber-50 border border-amber-200"
+        />
+        <StatsCard
+          title="Approved Absences"
+          value={stats.approvedRequests || 0}
+          subtitle="This year"
+          icon={CheckCircle2}
+          variant="blue"
+        />
+        <StatsCard
+          title="Total Absences"
+          value={stats.totalAbsences || 0}
+          subtitle="All requests"
+          icon={CalendarOff}
+          colorClass="text-violet-600"
+          bgClass="bg-violet-50 border border-violet-200"
+        />
+        <StatsCard
+          title="Next Holiday"
+          value={stats.nextHoliday?.name || 'None'}
+          subtitle={
+            stats.nextHoliday
+              ? parseLocalDate(stats.nextHoliday.holiday_date)?.toLocaleDateString('en-US', {
+                  month: 'short',
+                  day: 'numeric',
+                })
+              : '—'
+          }
+          icon={CalendarIcon}
+          colorClass="text-pink-600"
+          bgClass="bg-pink-50 border border-pink-200"
         />
       </div>
 
-      {/* CRA Quick Link Card */}
-      <div className="mb-8">
-        <Link to="/cra" className={`block bg-white rounded-2xl shadow-sm border p-5 hover:shadow-md transition-all group ${craStats.in_progress > 0 ? 'border-blue-500 bg-blue-50/20' : 'border-slate-200/60 hover:border-blue-200'}`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className={`p-3 rounded-2xl ${craStats.in_progress > 0 ? 'bg-blue-500 animate-pulse text-white' : 'bg-indigo-50 text-indigo-600'}`}>
-                <ClipboardList size={24} />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-slate-800">
-                  {craStats.in_progress > 0 ? '⚡ Activity Timer Running' : 'Activity Reports (CRA)'}
-                </h3>
-                <p className="text-sm text-slate-500 mt-0.5">
-                  {craStats.in_progress > 0 ? 'You have an active activity tracker running. Click to view.' : (
-                    `${craStats.completed || 0} completed · ${craStats.approved || 0} approved · ${craStats.total || 0} total`
-                  )}
-                </p>
-              </div>
+      {/* CRA Quick Tracker Card */}
+      <Link
+        to="/cra"
+        className={`block bg-white rounded-2xl border p-5 transition-all duration-200 hover:shadow-md ${
+          craStats.in_progress > 0
+            ? 'border-blue-400 bg-blue-50/40 shadow-xs'
+            : 'border-[#d6e2f0] hover:border-blue-300 shadow-premium-sm'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div
+              className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                craStats.in_progress > 0
+                  ? 'bg-gradient-to-tr from-[#2563eb] to-[#38bdf8] text-white shadow-electric-glow'
+                  : 'bg-[#e7f0fa] text-[#2563eb] border border-[#dde5ec]'
+              }`}
+            >
+              <ClipboardList size={22} />
             </div>
-            <ChevronRight size={20} className={`text-slate-400 group-hover:text-blue-600 transition-colors ${craStats.in_progress > 0 ? 'text-blue-500' : ''}`} />
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-[#172033]">
+                  {craStats.in_progress > 0 ? '⚡ Active Activity Tracker Running' : 'Activity Reports (CRA)'}
+                </h3>
+                {craStats.in_progress > 0 && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#e7f0fa] text-[#2563eb]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#2563eb] animate-pulse" />
+                    Tracking Time
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {craStats.in_progress > 0
+                  ? 'An activity is currently in progress. Click to view or stop tracking.'
+                  : `${craStats.completed || 0} completed · ${craStats.approved || 0} approved · ${craStats.total || 0} total tasks`}
+              </p>
+            </div>
           </div>
-        </Link>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Left Column: Balance */}
-        <div className="lg:col-span-4 space-y-8">
-          {/* Leave Balance Card */}
-          <Card className="p-6 shadow-sm border-slate-200">
-            <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2 pb-3 border-b border-slate-100">
-              <CalendarDays className="text-emerald-600" size={20} />
-              Leave Balances
-            </h3>
+          <div className="flex items-center gap-1 text-xs font-bold text-[#2563eb] group-hover:text-[#1d4ed8]">
+            <span>Open CRA</span>
+            <ChevronRight size={16} />
+          </div>
+        </div>
+      </Link>
+
+      {/* Two Column Grid: Balances & Recent Activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left Column: Balances Breakdown */}
+        <div className="lg:col-span-5 space-y-6">
+          <Card headerVariant="light" title="Leave Balances" subtitle="Allocated and remaining quotas for this calendar year">
             <div className="space-y-6">
               <div>
-                <h4 className="text-xs font-bold text-slate-600 mb-3 uppercase tracking-wider">Paid Leave (Congés payés)</h4>
-                <div className="flex justify-around items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <h4 className="text-xs font-extrabold text-[#2563eb] uppercase tracking-wider mb-3 font-heading">
+                  Paid Vacation (Congés payés)
+                </h4>
+                <div className="flex justify-around items-center bg-[#f1f5f8] p-4 rounded-xl border border-[#dde5ec]">
                   <CircularProgress value={usedVacation} max={22} label="Used Days" colorClass="text-amber-500" />
-                  <CircularProgress value={remainingVacation} max={22} label="Remaining" colorClass="text-emerald-500" />
+                  <CircularProgress value={remainingVacation} max={22} label="Remaining" colorClass="text-[#2563eb]" />
                 </div>
               </div>
-              
+
               <div>
-                <h4 className="text-xs font-bold text-slate-600 mb-3 uppercase tracking-wider">Sick Leave (Congés maladie)</h4>
-                <div className="flex justify-around items-center bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <h4 className="text-xs font-extrabold text-[#2563eb] uppercase tracking-wider mb-3 font-heading">
+                  Sick Leave (Congés maladie)
+                </h4>
+                <div className="flex justify-around items-center bg-[#f1f5f8] p-4 rounded-xl border border-[#dde5ec]">
                   <CircularProgress value={usedSick} max={5} label="Used Days" colorClass="text-rose-500" />
-                  <CircularProgress value={remainingSick} max={5} label="Remaining" colorClass="text-emerald-500" />
+                  <CircularProgress value={remainingSick} max={5} label="Remaining" colorClass="text-emerald-600" />
                 </div>
               </div>
             </div>
           </Card>
         </div>
 
-        {/* Right Column: Timeline */}
-        <div className="lg:col-span-8">
-          <Card className="p-6 h-full shadow-sm border-slate-200">
-            <div className="flex items-center justify-between mb-8 pb-4 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <Activity className="text-blue-600" size={20} />
-                Recent Activity
-              </h3>
-              <Link to="/leave-requests" className="text-sm font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 transition-colors">
-                View All <ChevronRight size={16} />
+        {/* Right Column: Recent Requests Activity */}
+        <div className="lg:col-span-7">
+          <Card
+            headerVariant="softBlue"
+            title="Recent Activity"
+            subtitle="Latest requests and status updates"
+            actions={
+              <Link
+                to="/leave-requests"
+                className="text-xs font-bold text-[#2563eb] hover:text-[#1d4ed8] flex items-center gap-1 transition-colors"
+              >
+                View All <ChevronRight size={14} />
               </Link>
-            </div>
-
-            {stats.recentAbsences && stats.recentAbsences.length > 0 ? (
-              <div className="space-y-6 relative before:absolute before:inset-0 before:ml-5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 before:to-transparent">
-                {stats.recentAbsences.map((ab, idx) => {
-                  const statusColors = {
-                    Pending: 'bg-amber-100 text-amber-600 border-amber-200',
-                    Validated: 'bg-emerald-100 text-emerald-600 border-emerald-200',
-                    Rejected: 'bg-red-100 text-red-600 border-red-200'
-                  };
-                  const statusColor = statusColors[ab.status] || 'bg-slate-100 text-slate-600 border-slate-200';
-                  
-                  return (
-                    <div key={ab.id} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
-                      <div className="flex items-center justify-center w-10 h-10 rounded-full border-4 border-white bg-blue-100 text-blue-600 shadow shrink-0 md:order-1 md:group-odd:-translate-x-1/2 md:group-even:translate-x-1/2">
+            }
+          >
+            {stats.recentRequests && stats.recentRequests.length > 0 ? (
+              <div className="divide-y divide-[#f1f5ff] -mx-6 -my-6">
+                {stats.recentRequests.map((req) => (
+                  <div key={req.id} className="px-6 py-4 flex items-center justify-between gap-4 hover:bg-[#f1f7ff] transition-colors">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8.5 h-8.5 rounded-xl bg-[#eff6ff] text-[#2563eb] flex items-center justify-center flex-shrink-0 border border-[#d6e2f0]">
                         <CalendarDays size={16} />
                       </div>
-                      <div className="w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] p-4 rounded-2xl border border-slate-100 bg-white shadow-sm hover:shadow-md transition-shadow">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${statusColor}`}>
-                            {ab.status}
-                          </span>
-                          <span className="text-xs font-semibold text-slate-400">
-                            {new Date(ab.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </span>
-                        </div>
-                        <h4 className="font-bold text-slate-800 text-sm mb-1">{ab.type}</h4>
-                        <p className="text-xs text-slate-500 font-medium">
-                          {parseLocalDate(ab.start_date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} 
-                          {' '}-{' '} 
-                          {parseLocalDate(ab.end_date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      <div className="min-w-0">
+                        <p className="font-bold text-[#172033] text-xs sm:text-sm capitalize truncate">
+                          {req.type} Leave
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-0.5 truncate font-mono">
+                          {parseLocalDate(req.start_date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} →{' '}
+                          {parseLocalDate(req.end_date)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                         </p>
                       </div>
                     </div>
-                  );
-                })}
+
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <StatusBadge status={req.status} type="soft" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mb-4 border border-slate-100">
-                  <Activity className="text-slate-300" size={32} />
-                </div>
-                <h4 className="text-lg font-bold text-slate-700 mb-1">No Recent Activity</h4>
-                <p className="text-slate-500 text-sm max-w-sm">You haven't submitted any absence requests yet. When you do, they will appear here.</p>
+              <div className="py-12 text-center text-slate-400 text-xs">
+                No leave requests filed yet.
               </div>
             )}
           </Card>

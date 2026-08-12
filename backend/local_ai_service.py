@@ -271,7 +271,23 @@ def verify():
         "similarity": float(similarity)
     })
 
+def handle_shutdown_signal(signum, frame):
+    sig_name = "SIGINT" if signum == signal.SIGINT else "SIGTERM"
+    logger.info(f"🛑 Received {sig_name}. Shutting down Local AI Service gracefully...")
+    sys.exit(0)
+
 if __name__ == '__main__':
+    import signal
+    signal.signal(signal.SIGINT, handle_shutdown_signal)
+    signal.signal(signal.SIGTERM, handle_shutdown_signal)
+
     port = int(os.environ.get('AI_PORT', 5001))
-    logger.info(f"Local AI Face Service starting on port {port}...")
-    app.run(host='0.0.0.0', port=port, debug=False)
+    logger.info(f"🚀 Local AI Face Service starting on port {port}...")
+    try:
+        app.run(host='0.0.0.0', port=port, debug=False)
+    except OSError as e:
+        if "Address already in use" in str(e):
+            logger.error(f"❌ Port {port} is already in use. Run 'npm run free-ports' to release it.")
+        else:
+            logger.error(f"❌ Server runtime error: {e}")
+        sys.exit(1)

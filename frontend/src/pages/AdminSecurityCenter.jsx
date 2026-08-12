@@ -1,22 +1,25 @@
 import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { 
+import {
   ShieldAlert, Lock, Unlock, Monitor, Activity, Users,
   AlertTriangle, Clock, RefreshCw, XCircle, Search, PowerOff
 } from 'lucide-react';
 import Card from '../components/Card';
+import StatsCard from '../components/StatsCard';
 import Button from '../components/Button';
-import LoadingSpinner from '../components/LoadingSpinner';
-import api from '../services/api';
+import LoadingSpinner, { SkeletonTable } from '../components/LoadingSpinner';
+import StatusBadge from '../components/StatusBadge';
 import Modal from '../components/Modal';
 import Pagination from '../components/Pagination';
+import api from '../services/api';
 
 const AdminSecurityCenter = () => {
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('users'); // 'users' or 'logs'
+  const [activeTab, setActiveTab] = useState('users');
+
   const [stats, setStats] = useState({
     total_users: 0,
     active_accounts: 0,
@@ -24,7 +27,6 @@ const AdminSecurityCenter = () => {
     disabled_accounts: 0,
     online_users: 0,
     offline_users: 0,
-    last_activity: null
   });
 
   // Pagination states
@@ -38,444 +40,355 @@ const AdminSecurityCenter = () => {
   const [lockDuration, setLockDuration] = useState(15);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  useEffect(() => {
-    fetchSecurityData();
-  }, []);
-
   const fetchSecurityData = async () => {
     try {
       setLoading(true);
-      const [usersRes, logsRes] = await Promise.all([
+      const [usersRes, logsRes] = await Promise.allSettled([
         api.get('/users', { params: { limit: 1000 } }),
-        api.get('/users/audit-logs', { params: { limit: 1000 } })
+        api.get('/users/audit-logs', { params: { limit: 1000 } }),
       ]);
 
-      if (usersRes.data.success) {
-        setUsers(usersRes.data.data || []);
-        if (usersRes.data.stats) {
-          setStats(usersRes.data.stats);
+      if (usersRes.status === 'fulfilled' && usersRes.value.data.success) {
+        setUsers(usersRes.value.data.data || []);
+        if (usersRes.value.data.stats) {
+          setStats(usersRes.value.data.stats);
         }
       }
-      if (logsRes.data.success) setAuditLogs(logsRes.data.data || logsRes.data);
+
+      if (logsRes.status === 'fulfilled' && logsRes.value.data.success) {
+        setAuditLogs(logsRes.value.data.data || logsRes.value.data || []);
+      }
     } catch (error) {
-      console.error('Error fetching admin security data:', error);
-      toast.error('Failed to load security center data');
+      console.error(error);
+      toast.error('Failed to load security center metrics');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleLockUnlock = async (user, minutes) => {
+  useEffect(() => {
+    fetchSecurityData();
+  }, []);
+
+  const handleToggleLock = async (user) => {
+    if (user.is_locked) {
+      try {
+        await api.post(`/users/${user.id}/unlock`);
+        toast.success(`Account unlocked: ${user.username}`);
+        fetchSecurityData();
+      } catch (err) {
+        toast.error('Failed to unlock user account');
+      }
+    } else {
+      setSelectedUser(user);
+      setIsLockModalOpen(true);
+    }
+  };
+
+  const handleConfirmLock = async () => {
+    if (!selectedUser) return;
     try {
       setIsSubmitting(true);
-      const res = await api.post(`/users/${user.id}/lock`, { minutes });
-      if (res.data.success) {
-        toast.success(res.data.message);
-        setIsLockModalOpen(false);
-        fetchSecurityData();
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to update account lock status');
+      await api.post(`/users/${selectedUser.id}/lock`, {
+        duration_minutes: lockDuration,
+      });
+      toast.success(`Account locked for ${lockDuration} minutes`);
+      setIsLockModalOpen(false);
+      fetchSecurityData();
+    } catch (err) {
+      toast.error('Failed to lock account');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleRevokeSessions = async (user) => {
-    if (!window.confirm(`Are you sure you want to revoke all active sessions for ${user.username}? They will be logged out of all devices immediately.`)) {
-      return;
-    }
-    
-    try {
-      const res = await api.delete(`/users/${user.id}/sessions`);
-      if (res.data.success) {
-        toast.success(res.data.message);
-        fetchSecurityData();
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to revoke sessions');
-    }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Never';
-    return new Date(dateString).toLocaleString();
-  };
-
-  const isLocked = (lockedUntil) => {
-    if (!lockedUntil) return false;
-    return new Date(lockedUntil) > new Date();
-  };
-
-  const filteredUsers = users.filter(u => 
-    u.username.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    u.email.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredUsers = users.filter(
+    (u) =>
+      u.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <LoadingSpinner size="lg" />
-        <p className="mt-4 text-slate-500 font-medium animate-pulse">Loading Security Center...</p>
-      </div>
-    );
-  }
+  const paginatedUsers = filteredUsers.slice((usersPage - 1) * limit, usersPage * limit);
+  const totalUsersPages = Math.ceil(filteredUsers.length / limit);
+
+  const paginatedLogs = auditLogs.slice((logsPage - 1) * limit, logsPage * limit);
+  const totalLogsPages = Math.ceil(auditLogs.length / limit);
 
   return (
-    <div className="min-h-screen pb-12 max-w-7xl mx-auto">
-      <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-slate-800 tracking-tight mb-1">Security Center</h1>
-          <p className="text-slate-500 font-medium">Global security overview and audit logs</p>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+            Security Command Center
+          </h1>
+          <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
+            Monitor system access, enforce lockouts, and audit organizational security events.
+          </p>
         </div>
-        <Button variant="secondary" icon={RefreshCw} onClick={fetchSecurityData} className="px-6">
-          Refresh Data
+        <Button variant="secondary" icon={RefreshCw} onClick={fetchSecurityData}>
+          Refresh Security
         </Button>
       </div>
 
-      {/* Global Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
-        <Card className="p-5 border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
-            <Users size={24} />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Total Users</p>
-            <p className="text-2xl font-black text-slate-800">{stats.total_users}</p>
-          </div>
-        </Card>
-        
-        <Card className="p-5 border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
-            <Unlock size={24} />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Active</p>
-            <p className="text-2xl font-black text-slate-800">{stats.active_accounts}</p>
-          </div>
-        </Card>
-
-        <Card className="p-5 border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-red-50 text-red-600 rounded-xl">
-            <Lock size={24} />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Locked</p>
-            <p className="text-2xl font-black text-slate-800">{stats.locked_accounts}</p>
-          </div>
-        </Card>
-
-        <Card className="p-5 border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-slate-100 text-slate-600 rounded-xl">
-            <XCircle size={24} />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Disabled</p>
-            <p className="text-2xl font-black text-slate-800">{stats.disabled_accounts}</p>
-          </div>
-        </Card>
-
-        <Card className="p-5 border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
-            <Monitor size={24} />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Online</p>
-            <p className="text-2xl font-black text-slate-800">{stats.online_users}</p>
-          </div>
-        </Card>
-
-        <Card className="p-5 border-slate-200 shadow-sm flex items-center gap-4">
-          <div className="p-3 bg-slate-50 text-slate-400 rounded-xl">
-            <PowerOff size={24} />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Offline</p>
-            <p className="text-2xl font-black text-slate-800">{stats.offline_users}</p>
-          </div>
-        </Card>
-
-        <Card className="p-5 border-slate-200 shadow-sm flex items-center gap-4 col-span-2">
-          <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
-            <Activity size={24} />
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-0.5">Last System Activity</p>
-            <p className="text-sm font-semibold text-slate-800 truncate">
-              {formatDate(stats.last_activity)}
-            </p>
-          </div>
-        </Card>
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+        <StatsCard
+          title="Total Accounts"
+          value={stats.total_users || users.length}
+          subtitle="All credentials"
+          icon={Users}
+          colorClass="text-blue-600"
+          bgClass="bg-blue-50"
+        />
+        <StatsCard
+          title="Active Accounts"
+          value={stats.active_accounts || users.filter((u) => u.is_active).length}
+          subtitle="Authorized logins"
+          icon={Monitor}
+          colorClass="text-emerald-600"
+          bgClass="bg-emerald-50"
+        />
+        <StatsCard
+          title="Locked Accounts"
+          value={stats.locked_accounts || users.filter((u) => u.is_locked).length}
+          subtitle="Temporary lockouts"
+          icon={Lock}
+          colorClass="text-rose-600"
+          bgClass="bg-rose-50"
+        />
+        <StatsCard
+          title="Audit Trail Records"
+          value={auditLogs.length}
+          subtitle="Security actions logged"
+          icon={Activity}
+          colorClass="text-indigo-600"
+          bgClass="bg-indigo-50"
+        />
       </div>
 
-      <Card className="p-0 overflow-hidden border-slate-200 shadow-sm mb-8">
-        <div className="border-b border-slate-200">
-          <div className="flex">
+      {/* Tabs */}
+      <div className="border-b border-slate-200">
+        <div className="flex gap-4">
+          {[
+            { id: 'users', label: 'User Security Status' },
+            { id: 'logs', label: 'Security Audit Logs' },
+          ].map((tab) => (
             <button
-              onClick={() => setActiveTab('users')}
-              className={`flex-1 py-4 text-sm font-bold text-center border-b-2 transition-colors ${
-                activeTab === 'users' ? 'border-blue-500 text-blue-600 bg-blue-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`relative pb-3 font-semibold text-xs sm:text-sm transition-colors cursor-pointer ${
+                activeTab === tab.id
+                  ? 'text-blue-600'
+                  : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              User Security Status
+              {tab.label}
+              {activeTab === tab.id && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-full" />
+              )}
             </button>
-            <button
-              onClick={() => setActiveTab('logs')}
-              className={`flex-1 py-4 text-sm font-bold text-center border-b-2 transition-colors ${
-                activeTab === 'logs' ? 'border-blue-500 text-blue-600 bg-blue-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              Global Audit Logs
-            </button>
-          </div>
+          ))}
         </div>
+      </div>
 
-        {activeTab === 'users' && (
-          <div>
-            <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="relative flex-1 max-w-md">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                <input
-                  type="text"
-                  placeholder="Search users..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                />
-              </div>
+      {/* User Security Status Tab */}
+      {activeTab === 'users' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 shadow-xs">
+            <div className="relative">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                type="text"
+                placeholder="Search user accounts by username or email…"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setUsersPage(1);
+                }}
+                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200/90 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
+              />
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200">
-                    <th className="py-4 px-6 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Username</th>
-                    <th className="py-4 px-6 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Role</th>
-                    <th className="py-4 px-6 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Account Status</th>
-                    <th className="py-4 px-6 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Online Status</th>
-                    <th className="py-4 px-6 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Last Login</th>
-                    <th className="py-4 px-6 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredUsers.slice((usersPage - 1) * limit, usersPage * limit).map((u) => {
-                    const locked = isLocked(u.locked_until);
-                    const disabled = !u.is_active;
-                    const online = parseInt(u.active_sessions || 0) > 0;
-                    
-                    return (
-                      <tr key={u.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="py-4 px-6">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center font-bold text-slate-500 shrink-0">
-                              {u.username.substring(0, 2).toUpperCase()}
-                            </div>
-                            <div>
-                              <div className="font-bold text-slate-800">{u.username}</div>
-                              <div className="text-xs text-slate-500">{u.email}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="py-4 px-6">
-                          <span className="text-xs font-bold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-lg uppercase tracking-wide">
-                            {u.role}
-                          </span>
-                        </td>
-                        <td className="py-4 px-6">
-                          {disabled ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                              <span className="w-2 h-2 rounded-full bg-slate-500"></span> Disabled
-                            </span>
-                          ) : locked ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-red-50 text-red-700 border border-red-200">
-                              <span className="w-2 h-2 rounded-full bg-red-500"></span> Locked
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                              <span className="w-2 h-2 rounded-full bg-emerald-500"></span> Active
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-4 px-6">
-                          {online ? (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200 animate-pulse">
-                              <span className="w-2 h-2 rounded-full bg-blue-500"></span> Online
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-slate-50 text-slate-400 border border-slate-100">
-                              <span className="w-2 h-2 rounded-full bg-slate-300"></span> Offline
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-4 px-6 text-sm text-slate-600 font-medium">
-                          {formatDate(u.last_login)}
-                        </td>
-                        <td className="py-4 px-6">
-                          <div className="flex items-center gap-2">
-                            {locked ? (
-                              <button
-                                onClick={() => handleLockUnlock(u, 0)}
-                                className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
-                                title="Unlock Account"
-                              >
-                                <Unlock size={18} />
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => { setSelectedUser(u); setIsLockModalOpen(true); }}
-                                className="p-2 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                title="Lock Account"
-                              >
-                                <Lock size={18} />
-                              </button>
-                            )}
-                            <button
-                              onClick={() => handleRevokeSessions(u)}
-                              disabled={parseInt(u.active_sessions || 0) === 0}
-                              className="p-2 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors disabled:opacity-30"
-                              title="Revoke All Sessions"
-                            >
-                              <PowerOff size={18} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {filteredUsers.length === 0 && (
-                    <tr>
-                      <td colSpan="6" className="py-12 text-center text-slate-500">
-                        No users found matching "{searchQuery}"
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <Pagination 
-              page={usersPage} 
-              limit={limit} 
-              total={filteredUsers.length} 
-              totalPages={Math.ceil(filteredUsers.length / limit)} 
-              onPageChange={(newPage) => setUsersPage(newPage)} 
-            />
           </div>
-        )}
 
-        {activeTab === 'logs' && (
-          <div>
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200">
-                    <th className="py-4 px-6 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Time</th>
-                    <th className="py-4 px-6 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Action</th>
-                    <th className="py-4 px-6 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Actor</th>
-                    <th className="py-4 px-6 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Target</th>
-                    <th className="py-4 px-6 text-[11px] font-bold text-slate-400 uppercase tracking-wider">Details</th>
-                    <th className="py-4 px-6 text-[11px] font-bold text-slate-400 uppercase tracking-wider">IP Address</th>
+              <table className="min-w-full divide-y divide-slate-100 text-sm">
+                <thead className="bg-slate-50/75 border-b border-slate-100">
+                  <tr>
+                    <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      User
+                    </th>
+                    <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Role
+                    </th>
+                    <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Account Status
+                    </th>
+                    <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Lock Status
+                    </th>
+                    <th className="px-6 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {auditLogs.slice((logsPage - 1) * limit, logsPage * limit).map((log) => (
-                    <tr key={log.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-3 px-6 whitespace-nowrap text-xs text-slate-500">
-                        {formatDate(log.created_at)}
+                  {paginatedUsers.map((u) => (
+                    <tr key={u.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="px-6 py-3.5">
+                        <div>
+                          <p className="font-semibold text-slate-900 text-xs sm:text-sm">
+                            {u.username}
+                          </p>
+                          <span className="text-xs text-slate-400">{u.email}</span>
+                        </div>
                       </td>
-                      <td className="py-3 px-6 whitespace-nowrap">
-                        <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded-md">
-                          {log.action}
+
+                      <td className="px-6 py-3.5">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 capitalize">
+                          {u.role}
                         </span>
                       </td>
-                      <td className="py-3 px-6 whitespace-nowrap text-sm font-medium text-slate-700">
-                        {log.actor_username || 'System'}
+
+                      <td className="px-6 py-3.5">
+                        <StatusBadge status={u.is_active ? 'active' : 'rejected'} type="dot" />
                       </td>
-                      <td className="py-3 px-6 whitespace-nowrap text-sm text-slate-500">
-                        {log.target_user_id || '-'}
+
+                      <td className="px-6 py-3.5">
+                        {u.is_locked ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600">
+                            <Lock size={12} /> Locked
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600">
+                            <Unlock size={12} /> Unlocked
+                          </span>
+                        )}
                       </td>
-                      <td className="py-3 px-6 text-sm text-slate-600 max-w-xs truncate" title={log.details}>
-                        {log.details}
-                      </td>
-                      <td className="py-3 px-6 text-xs text-slate-400">
-                        {log.ip_address}
+
+                      <td className="px-6 py-3.5 text-right">
+                        <Button
+                          size="xs"
+                          variant={u.is_locked ? 'secondary' : 'softBlue'}
+                          icon={u.is_locked ? Unlock : Lock}
+                          onClick={() => handleToggleLock(u)}
+                        >
+                          {u.is_locked ? 'Unlock' : 'Lock Account'}
+                        </Button>
                       </td>
                     </tr>
                   ))}
-                  {auditLogs.length === 0 && (
-                    <tr>
-                      <td colSpan="6" className="py-12 text-center text-slate-500">
-                        No audit logs found.
-                      </td>
-                    </tr>
-                  )}
                 </tbody>
               </table>
             </div>
-            <Pagination 
-              page={logsPage} 
-              limit={limit} 
-              total={auditLogs.length} 
-              totalPages={Math.ceil(auditLogs.length / limit)} 
-              onPageChange={(newPage) => setLogsPage(newPage)} 
+
+            <Pagination
+              page={usersPage}
+              limit={limit}
+              total={filteredUsers.length}
+              totalPages={totalUsersPages}
+              onPageChange={(p) => setUsersPage(p)}
             />
           </div>
-        )}
-      </Card>
+        </div>
+      )}
 
-      {/* Lock Account Modal */}
+      {/* Security Audit Logs Tab */}
+      {activeTab === 'logs' && (
+        <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-100 text-sm">
+              <thead className="bg-slate-50/75 border-b border-slate-100">
+                <tr>
+                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Timestamp
+                  </th>
+                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Initiator
+                  </th>
+                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Event / Action
+                  </th>
+                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Target User
+                  </th>
+                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                    Details
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {paginatedLogs.map((log, i) => (
+                  <tr key={i} className="hover:bg-slate-50/70 transition-colors">
+                    <td className="px-6 py-3.5 text-xs text-slate-600 font-mono">
+                      {new Date(log.created_at || log.timestamp).toLocaleString()}
+                    </td>
+                    <td className="px-6 py-3.5 text-xs font-semibold text-slate-900">
+                      {log.initiator_name || 'System Auto'}
+                    </td>
+                    <td className="px-6 py-3.5">
+                      <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                        {log.action_type || log.event}
+                      </span>
+                    </td>
+                    <td className="px-6 py-3.5 text-xs text-slate-700">
+                      {log.target_username || log.target_id || '—'}
+                    </td>
+                    <td className="px-6 py-3.5 text-xs text-slate-500 truncate max-w-xs">
+                      {log.details || '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <Pagination
+            page={logsPage}
+            limit={limit}
+            total={auditLogs.length}
+            totalPages={totalLogsPages}
+            onPageChange={(p) => setLogsPage(p)}
+          />
+        </div>
+      )}
+
+      {/* Lock User Modal */}
       <Modal
         isOpen={isLockModalOpen}
-        onClose={() => !isSubmitting && setIsLockModalOpen(false)}
-        title="Lock User Account"
-        size="sm"
+        onClose={() => setIsLockModalOpen(false)}
+        title={`Lock Account: ${selectedUser?.username}`}
+        subtitle="Temporarily restrict login access for this account."
       >
-        {selectedUser && (
-          <div className="space-y-6">
-            <div className="bg-red-50 text-red-700 p-4 rounded-xl border border-red-200 text-sm font-medium flex gap-3">
-              <AlertTriangle className="shrink-0 text-red-500" size={20} />
-              <p>Locking this account will prevent the user from logging in until the lock expires or is manually removed.</p>
-            </div>
-            
-            <div>
-              <p className="font-bold text-slate-800 mb-1">Target User</p>
-              <p className="text-slate-500">{selectedUser.username} ({selectedUser.email})</p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">Lock Duration (Minutes)</label>
-              <select
-                value={lockDuration}
-                onChange={(e) => setLockDuration(Number(e.target.value))}
-                className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 font-medium text-slate-700 bg-slate-50 focus:bg-white transition-colors"
-              >
-                <option value={15}>15 Minutes</option>
-                <option value={60}>1 Hour</option>
-                <option value={1440}>24 Hours</option>
-                <option value={10080}>7 Days</option>
-                <option value={525600}>Permanent (1 Year)</option>
-              </select>
-            </div>
-
-            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-              <button 
-                type="button"
-                onClick={() => setIsLockModalOpen(false)}
-                disabled={isSubmitting}
-                className="px-6 py-2.5 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <Button 
-                onClick={() => handleLockUnlock(selectedUser, lockDuration)}
-                disabled={isSubmitting}
-                className="px-6 py-2.5 shadow-md bg-red-600 hover:bg-red-700"
-              >
-                {isSubmitting ? 'Locking...' : 'Lock Account'}
-              </Button>
-            </div>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+              Lockout Duration (Minutes)
+            </label>
+            <select
+              value={lockDuration}
+              onChange={(e) => setLockDuration(parseInt(e.target.value, 10))}
+              className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 cursor-pointer"
+            >
+              <option value={15}>15 Minutes</option>
+              <option value={30}>30 Minutes</option>
+              <option value={60}>1 Hour</option>
+              <option value={1440}>24 Hours</option>
+              <option value={43200}>30 Days (Indefinite)</option>
+            </select>
           </div>
-        )}
-      </Modal>
 
+          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+            <Button variant="secondary" onClick={() => setIsLockModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={handleConfirmLock} loading={isSubmitting}>
+              Confirm Lockout
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

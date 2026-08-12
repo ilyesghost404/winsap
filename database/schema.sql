@@ -293,6 +293,7 @@ ALTER SEQUENCE public.employees_id_seq OWNED BY public.employees.id;
 CREATE TABLE public.holidays (
     id integer NOT NULL,
     holiday_date date NOT NULL,
+    end_date date,
     name character varying(100) NOT NULL,
     type character varying(50) DEFAULT 'National'::character varying,
     recurring boolean DEFAULT false,
@@ -733,12 +734,6 @@ ALTER TABLE ONLY public.employees
     ADD CONSTRAINT employees_pkey PRIMARY KEY (id);
 
 
---
--- Name: holidays holidays_holiday_date_key; Type: CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.holidays
-    ADD CONSTRAINT holidays_holiday_date_key UNIQUE (holiday_date);
 
 
 --

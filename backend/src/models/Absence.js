@@ -14,6 +14,7 @@ class Absence {
         let dataQuery = `
             SELECT 
                 absences.*,
+                COALESCE(absences.status, 'Pending') AS status,
                 CONCAT(employees.first_name, ' ', employees.last_name) AS employee_name,
                 employees.matricule,
                 d.name AS department
@@ -77,6 +78,7 @@ class Absence {
         const result = await db.query(`
             SELECT 
                 absences.*,
+                COALESCE(absences.status, 'Pending') AS status,
                 CONCAT(employees.first_name, ' ', employees.last_name) AS employee_name
             FROM absences
             JOIN employees ON absences.employee_id = employees.id
@@ -86,12 +88,13 @@ class Absence {
     }
 
     static async create(absence) {
-        const { employee_id, type, start_date, end_date, reason, source = 'employee_request' } = absence;
+        const { employee_id, type, start_date, end_date, reason, status = 'Pending', source = 'employee_request' } = absence;
+        const finalStatus = status || 'Pending';
         const result = await db.query(
-            `INSERT INTO absences (employee_id, type, start_date, end_date, reason, source) 
-             VALUES ($1, $2, $3, $4, $5, $6) 
+            `INSERT INTO absences (employee_id, type, start_date, end_date, reason, status, source) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7) 
              RETURNING *`,
-            [employee_id, type, start_date, end_date, reason, source]
+            [employee_id, type, start_date, end_date, reason, finalStatus, source]
         );
         return result.rows[0];
     }
@@ -100,10 +103,10 @@ class Absence {
         const { employee_id, type, start_date, end_date, reason, status } = absence;
         const result = await db.query(
             `UPDATE absences 
-             SET employee_id = $1, type = $2, start_date = $3, end_date = $4, reason = $5, status = $6
+             SET employee_id = $1, type = $2, start_date = $3, end_date = $4, reason = $5, status = COALESCE($6, status, 'Pending')
              WHERE id = $7 
              RETURNING *`,
-            [employee_id, type, start_date, end_date, reason, status, id]
+            [employee_id, type, start_date, end_date, reason, status || null, id]
         );
         return result.rows[0];
     }
@@ -149,6 +152,7 @@ class Absence {
         let dataQuery = `
             SELECT 
                 absences.*,
+                COALESCE(absences.status, 'Pending') AS status,
                 CONCAT(employees.first_name, ' ', employees.last_name) AS employee_name,
                 employees.matricule,
                 d.name AS department
@@ -189,7 +193,8 @@ class Absence {
         let query = `
             SELECT * FROM absences
             WHERE employee_id = $1
-              AND status != 'Rejected'
+              AND COALESCE(status, 'Pending') NOT ILIKE 'Rejected'
+              AND COALESCE(status, 'Pending') NOT ILIKE 'Refused'
               AND start_date <= $2
               AND end_date >= $3
         `;

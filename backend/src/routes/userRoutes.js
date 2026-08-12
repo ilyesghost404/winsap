@@ -22,6 +22,8 @@ const {
   deleteUser,
   activateAccount,
   verifyActivationToken,
+  resendActivationEmail,
+  toggleUserStatus,
   skipFaceIdSetup
 } = require("../controllers/userController");
 const { requireAuth, authorizeRoles } = require("../middleware/authMiddleware");
@@ -52,6 +54,8 @@ router.get("/login-history", requireAuth, getLoginHistory);
 // Admin-only user management routes
 router.get("/", requireAuth, authorizeRoles("admin"), getUsers);
 router.post("/", requireAuth, authorizeRoles("admin"), createUser);
+router.post("/resend-activation", requireAuth, authorizeRoles("admin"), resendActivationEmail);
+router.patch("/:id/status", requireAuth, authorizeRoles("admin"), toggleUserStatus);
 router.put("/:id", requireAuth, authorizeRoles("admin"), updateUser);
 router.delete("/:id", requireAuth, authorizeRoles("admin"), deleteUser);
 

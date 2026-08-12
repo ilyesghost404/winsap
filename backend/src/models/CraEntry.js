@@ -221,16 +221,28 @@ class CraEntry {
   }
 
   /**
+   * Format row to include started_at and ended_at aliases.
+   */
+  static formatRow(row) {
+    if (!row) return null;
+    return {
+      ...row,
+      started_at: row.start_time || null,
+      ended_at: row.end_time || null
+    };
+  }
+
+  /**
    * Create and start a CRA entry immediately (IN_PROGRESS).
    */
   static async createAndStart(data) {
     const { employee_id, ticket_reference, description, priority = 0 } = data;
     const result = await db.query(`
-      INSERT INTO cra_entries (employee_id, ticket_reference, description, priority, start_time, status)
-      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, 'IN_PROGRESS')
+      INSERT INTO cra_entries (employee_id, ticket_reference, description, priority, start_time, end_time, duration_minutes, status)
+      VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, NULL, NULL, 'IN_PROGRESS')
       RETURNING *
     `, [employee_id, ticket_reference, description, priority]);
-    return result.rows[0];
+    return CraEntry.formatRow(result.rows[0]);
   }
 
   /**
@@ -239,24 +251,24 @@ class CraEntry {
   static async start(id) {
     const result = await db.query(`
       UPDATE cra_entries
-      SET start_time = CURRENT_TIMESTAMP, status = 'IN_PROGRESS'
+      SET start_time = CURRENT_TIMESTAMP, end_time = NULL, duration_minutes = NULL, status = 'IN_PROGRESS'
       WHERE id = $1 AND status = 'PENDING_START'
       RETURNING *
     `, [id]);
-    return result.rows[0] || null;
+    return CraEntry.formatRow(result.rows[0]);
   }
 
   /**
-   * End a running CRA entry -> transitions to PENDING_APPROVAL.
+   * End a running CRA entry -> transitions to COMPLETED.
    */
   static async end(id, endTime, durationMinutes) {
     const result = await db.query(`
       UPDATE cra_entries
-      SET end_time = $1, duration_minutes = $2, status = 'PENDING_APPROVAL'
+      SET end_time = $1, duration_minutes = $2, status = 'COMPLETED'
       WHERE id = $3 AND status = 'IN_PROGRESS'
       RETURNING *
     `, [endTime, durationMinutes, id]);
-    return result.rows[0] || null;
+    return CraEntry.formatRow(result.rows[0]);
   }
 
   /**
@@ -325,6 +337,64 @@ class CraEntry {
   }
 
   /**
+   * Get monthly stats for an employee (hours, days, weekly completions, avg time).
+   */
+  static async getMonthlyStatsByEmployee(employeeId) {
+    const result = await db.query(`
+      SELECT
+        COALESCE(SUM(duration_minutes) FILTER (WHERE status IN ('COMPLETED', 'PENDING_APPROVAL', 'APPROVED')
+          AND EXTRACT(MONTH FROM end_time) = EXTRACT(MONTH FROM CURRENT_DATE)
+          AND EXTRACT(YEAR FROM end_time) = EXTRACT(YEAR FROM CURRENT_DATE)), 0) AS total_minutes_month,
+        COALESCE(COUNT(DISTINCT DATE(start_time)) FILTER (WHERE status IN ('COMPLETED', 'PENDING_APPROVAL', 'APPROVED', 'IN_PROGRESS')
+          AND EXTRACT(MONTH FROM start_time) = EXTRACT(MONTH FROM CURRENT_DATE)
+          AND EXTRACT(YEAR FROM start_time) = EXTRACT(YEAR FROM CURRENT_DATE)), 0) AS total_days_month,
+        COALESCE(COUNT(*) FILTER (WHERE status IN ('COMPLETED', 'PENDING_APPROVAL', 'APPROVED')
+          AND end_time >= DATE_TRUNC('week', CURRENT_DATE)), 0) AS completed_this_week,
+        COALESCE(AVG(duration_minutes) FILTER (WHERE status IN ('COMPLETED', 'PENDING_APPROVAL', 'APPROVED')
+          AND duration_minutes > 0), 0) AS avg_duration_minutes
+      FROM cra_entries
+      WHERE employee_id = $1
+    `, [employeeId]);
+    const row = result.rows[0];
+    const totalMinutes = parseInt(row.total_minutes_month) || 0;
+    return {
+      total_hours_month: parseFloat((totalMinutes / 60).toFixed(1)),
+      total_days_month: parseInt(row.total_days_month) || 0,
+      completed_this_week: parseInt(row.completed_this_week) || 0,
+      avg_duration_minutes: Math.round(parseFloat(row.avg_duration_minutes) || 0)
+    };
+  }
+
+  /**
+   * Get monthly stats across all employees (manager view).
+   */
+  static async getMonthlyTeamStats() {
+    const result = await db.query(`
+      SELECT
+        COALESCE(SUM(duration_minutes) FILTER (WHERE status IN ('COMPLETED', 'PENDING_APPROVAL', 'APPROVED')
+          AND EXTRACT(MONTH FROM end_time) = EXTRACT(MONTH FROM CURRENT_DATE)
+          AND EXTRACT(YEAR FROM end_time) = EXTRACT(YEAR FROM CURRENT_DATE)), 0) AS total_minutes_month,
+        COALESCE(COUNT(*) FILTER (WHERE status IN ('COMPLETED', 'PENDING_APPROVAL', 'APPROVED')
+          AND end_time >= CURRENT_DATE), 0) AS completed_today,
+        COALESCE(COUNT(*) FILTER (WHERE status IN ('COMPLETED', 'PENDING_APPROVAL', 'APPROVED')
+          AND end_time >= DATE_TRUNC('week', CURRENT_DATE)), 0) AS completed_this_week,
+        COALESCE(AVG(duration_minutes) FILTER (WHERE status IN ('COMPLETED', 'PENDING_APPROVAL', 'APPROVED')
+          AND duration_minutes > 0), 0) AS avg_duration_minutes,
+        COUNT(DISTINCT employee_id) FILTER (WHERE status = 'IN_PROGRESS') AS active_employees
+      FROM cra_entries
+    `);
+    const row = result.rows[0];
+    const totalMinutes = parseInt(row.total_minutes_month) || 0;
+    return {
+      total_hours_month: parseFloat((totalMinutes / 60).toFixed(1)),
+      completed_today: parseInt(row.completed_today) || 0,
+      completed_this_week: parseInt(row.completed_this_week) || 0,
+      avg_duration_minutes: Math.round(parseFloat(row.avg_duration_minutes) || 0),
+      active_employees: parseInt(row.active_employees) || 0
+    };
+  }
+
+  /**
    * Get CRA stats across all employees (manager dashboard).
    */
   static async getTeamStats() {
@@ -382,6 +452,110 @@ class CraEntry {
     `, [ticket_reference, description, priority, start_time, end_time, duration_minutes, status, id]);
     return result.rows[0] || null;
   }
+
+  /**
+   * Get Manager Control Center live stats (8 metrics).
+   */
+  static async getControlCenterStats() {
+    const result = await db.query(`
+      SELECT
+        COUNT(DISTINCT employee_id) FILTER (WHERE status = 'IN_PROGRESS') AS employees_working_now,
+        COUNT(*) FILTER (WHERE status = 'PENDING_START') AS tasks_in_queue,
+        COUNT(*) FILTER (WHERE status = 'IN_PROGRESS') AS tasks_in_progress,
+        COUNT(*) FILTER (WHERE status IN ('COMPLETED', 'PENDING_APPROVAL', 'APPROVED') AND DATE(end_time) = CURRENT_DATE) AS tasks_completed_today,
+        COUNT(*) FILTER (WHERE status IN ('COMPLETED', 'PENDING_APPROVAL', 'APPROVED') AND end_time >= DATE_TRUNC('week', CURRENT_DATE)) AS tasks_completed_this_week,
+        COALESCE(SUM(duration_minutes) FILTER (WHERE DATE(end_time) = CURRENT_DATE OR (status = 'IN_PROGRESS' AND DATE(start_time) = CURRENT_DATE)), 0) AS total_minutes_today,
+        COALESCE(AVG(duration_minutes) FILTER (WHERE status IN ('COMPLETED', 'PENDING_APPROVAL', 'APPROVED') AND duration_minutes > 0), 0) AS avg_duration_minutes,
+        COUNT(*) FILTER (WHERE status IN ('COMPLETED', 'APPROVED')) AS total_completed,
+        COUNT(*) AS total_tasks
+      FROM cra_entries
+    `);
+    const row = result.rows[0];
+    const totalMinutesToday = parseInt(row.total_minutes_today) || 0;
+    const totalCompleted = parseInt(row.total_completed) || 0;
+    const totalTasks = parseInt(row.total_tasks) || 1;
+    const teamProductivity = Math.min(100, Math.round((totalCompleted / Math.max(1, totalTasks)) * 100));
+
+    return {
+      employees_working_now: parseInt(row.employees_working_now) || 0,
+      tasks_in_queue: parseInt(row.tasks_in_queue) || 0,
+      tasks_in_progress: parseInt(row.tasks_in_progress) || 0,
+      tasks_completed_today: parseInt(row.tasks_completed_today) || 0,
+      tasks_completed_this_week: parseInt(row.tasks_completed_this_week) || 0,
+      total_hours_today: parseFloat((totalMinutesToday / 60).toFixed(1)),
+      avg_duration_minutes: Math.round(parseFloat(row.avg_duration_minutes) || 0),
+      team_productivity: teamProductivity
+    };
+  }
+
+  /**
+   * Get Live Activity Feed events (newest first).
+   */
+  static async getLiveFeed(limit = 20) {
+    const result = await db.query(`
+      SELECT
+        cra_entries.id,
+        cra_entries.employee_id,
+        cra_entries.ticket_reference,
+        cra_entries.description,
+        cra_entries.status,
+        cra_entries.start_time,
+        cra_entries.end_time,
+        cra_entries.updated_at,
+        CONCAT(employees.first_name, ' ', employees.last_name) AS employee_name
+      FROM cra_entries
+      JOIN employees ON cra_entries.employee_id = employees.id
+      ORDER BY cra_entries.updated_at DESC
+      LIMIT $1
+    `, [limit]);
+    return result.rows;
+  }
+
+  /**
+   * Get read-only monitor summary profile for a single employee.
+   */
+  static async getEmployeeMonitorSummary(employeeId) {
+    const [empRes, statsRes, tasksRes] = await Promise.all([
+      db.query(`
+        SELECT employees.*, departments.name AS department_name
+        FROM employees
+        LEFT JOIN departments ON employees.department_id = departments.id
+        WHERE employees.id = $1
+      `, [employeeId]),
+      db.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE status = 'IN_PROGRESS') AS is_working,
+          COALESCE(SUM(duration_minutes) FILTER (WHERE DATE(end_time) = CURRENT_DATE), 0) AS minutes_today,
+          COALESCE(SUM(duration_minutes) FILTER (WHERE end_time >= DATE_TRUNC('week', CURRENT_DATE)), 0) AS minutes_week,
+          COALESCE(SUM(duration_minutes) FILTER (WHERE EXTRACT(MONTH FROM end_time) = EXTRACT(MONTH FROM CURRENT_DATE)), 0) AS minutes_month,
+          COUNT(*) FILTER (WHERE status IN ('COMPLETED', 'PENDING_APPROVAL', 'APPROVED')) AS total_completed
+        FROM cra_entries
+        WHERE employee_id = $1
+      `, [employeeId]),
+      db.query(`
+        SELECT * FROM cra_entries
+        WHERE employee_id = $1
+        ORDER BY created_at DESC
+        LIMIT 15
+      `, [employeeId])
+    ]);
+
+    const emp = empRes.rows[0] || {};
+    const statsRow = statsRes.rows[0] || {};
+
+    return {
+      employee: emp,
+      metrics: {
+        is_working: parseInt(statsRow.is_working) > 0,
+        hours_today: parseFloat(((parseInt(statsRow.minutes_today) || 0) / 60).toFixed(1)),
+        hours_week: parseFloat(((parseInt(statsRow.minutes_week) || 0) / 60).toFixed(1)),
+        hours_month: parseFloat(((parseInt(statsRow.minutes_month) || 0) / 60).toFixed(1)),
+        total_completed: parseInt(statsRow.total_completed) || 0
+      },
+      recent_tasks: tasksRes.rows
+    };
+  }
 }
 
 module.exports = CraEntry;
+

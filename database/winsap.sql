@@ -418,6 +418,7 @@ ALTER SEQUENCE public.face_security_logs_id_seq OWNED BY public.face_security_lo
 CREATE TABLE public.holidays (
     id integer NOT NULL,
     holiday_date date NOT NULL,
+    end_date date,
     name character varying(100) NOT NULL,
     type character varying(50) DEFAULT 'National'::character varying,
     recurring boolean DEFAULT false,
@@ -1321,12 +1322,6 @@ ALTER TABLE ONLY public.face_security_logs
     ADD CONSTRAINT face_security_logs_pkey PRIMARY KEY (id);
 
 
---
--- Name: holidays holidays_holiday_date_key; Type: CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.holidays
-    ADD CONSTRAINT holidays_holiday_date_key UNIQUE (holiday_date);
 
 
 --

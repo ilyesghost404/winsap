@@ -1,29 +1,32 @@
-import { Inbox } from 'lucide-react';
+import { FolderOpen, Plus } from 'lucide-react';
+import Button from './Button';
 
-const EmptyState = ({ 
-  title = 'No data available', 
-  description = '', 
-  icon: Icon = Inbox, 
-  className = '',
+const EmptyState = ({
+  icon: Icon = FolderOpen,
+  title = 'No records found',
+  description = 'There are no items to display right now.',
   action,
-  actionLabel 
+  actionLabel = 'Create New',
+  actionIcon: ActionIcon = Plus,
+  className = ''
 }) => {
   return (
-    <div className={`flex flex-col items-center justify-center py-16 text-center px-4 ${className}`}>
-      <div className="w-20 h-20 bg-gradient-to-br from-slate-100 to-slate-200 rounded-2xl flex items-center justify-center mb-5 shadow-sm">
-        <Icon className="text-slate-400" size={36} strokeWidth={1.5} />
+    <div className={`flex flex-col items-center justify-center py-16 px-4 text-center ${className}`}>
+      <div className="w-14 h-14 rounded-2xl bg-blue-50/80 border border-blue-100 flex items-center justify-center mb-3.5 text-blue-600 shadow-xs">
+        <Icon size={26} strokeWidth={1.75} />
       </div>
-      <h3 className="text-lg font-bold text-slate-800 mb-1.5">{title}</h3>
+      <h4 className="text-base font-semibold text-slate-800 tracking-tight">{title}</h4>
       {description && (
-        <p className="text-slate-500 max-w-sm text-sm leading-relaxed">{description}</p>
+        <p className="text-xs text-slate-500 mt-1 max-w-sm font-normal leading-relaxed">
+          {description}
+        </p>
       )}
       {action && (
-        <button
-          onClick={action}
-          className="mt-5 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-all shadow-md shadow-blue-500/20 hover:shadow-lg hover:shadow-blue-500/30 hover:-translate-y-0.5"
-        >
-          {actionLabel || 'Get Started'}
-        </button>
+        <div className="mt-5">
+          <Button icon={ActionIcon} size="sm" onClick={action}>
+            {actionLabel}
+          </Button>
+        </div>
       )}
     </div>
   );

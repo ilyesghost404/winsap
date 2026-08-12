@@ -1,555 +1,276 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import toast from 'react-hot-toast';
-import { 
-  ShieldCheck, Lock, Smartphone, Monitor, Globe, Clock, 
+import {
+  ShieldCheck, Lock, Smartphone, Monitor, Globe, Clock,
   Trash2, AlertTriangle, Key, LogIn, ChevronRight, Server,
-  Loader2, RefreshCw
+  RefreshCw, CheckCircle2, Camera
 } from 'lucide-react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import LoadingSpinner from '../components/LoadingSpinner';
-import api from '../services/api';
-import { useAuth } from '../context/AuthContext';
+import StatusBadge from '../components/StatusBadge';
+import PasswordInput from '../components/PasswordInput';
 import Modal from '../components/Modal';
 import FaceRegistration from '../components/FaceRegistration';
 import CameraCapture from '../components/CameraCapture';
+import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 const SecuritySettings = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [sessions, setSessions] = useState([]);
   const [loginHistory, setLoginHistory] = useState([]);
-  
+
   // Password state
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [passwordStrength, setPasswordStrength] = useState({ score: 0, label: 'Weak', color: 'bg-slate-200' });
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   // 2FA state
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
-  const [isUpdating2FA, setIsUpdating2FA] = useState(false);
 
-  // Face ID biometrics state
+  // Face ID state
   const [faceStatus, setFaceStatus] = useState({ registered: false });
   const [isFaceModalOpen, setIsFaceModalOpen] = useState(false);
-  const [faceModalStep, setFaceModalStep] = useState(0); // 0: Verify Old Face, 1: Register/Update Face
-  const [verifyToken, setVerifyToken] = useState('');
-  const [verifyError, setVerifyError] = useState('');
-  const [verifying, setVerifying] = useState(false);
-
-  useEffect(() => {
-    if (user) {
-      fetchSecurityData();
-    }
-  }, [user]);
-
-  useEffect(() => {
-    let score = 0;
-    if (newPassword.length >= 8) score += 1;
-    if (/[A-Z]/.test(newPassword)) score += 1;
-    if (/[a-z]/.test(newPassword)) score += 1;
-    if (/[0-9]/.test(newPassword)) score += 1;
-    if (/[^A-Za-z0-9]/.test(newPassword)) score += 1;
-
-    if (newPassword.length === 0) {
-      setPasswordStrength({ score: 0, label: '', color: 'bg-slate-200' });
-    } else if (score < 3) {
-      setPasswordStrength({ score, label: 'Weak', color: 'bg-red-500' });
-    } else if (score < 5) {
-      setPasswordStrength({ score, label: 'Medium', color: 'bg-amber-500' });
-    } else {
-      setPasswordStrength({ score, label: 'Strong', color: 'bg-emerald-500' });
-    }
-  }, [newPassword]);
-
-  const handleOpenFaceModal = (isUpdate) => {
-    setVerifyToken('');
-    setVerifyError('');
-    setVerifying(false);
-    if (isUpdate) {
-      setFaceModalStep(0); // must verify identity first
-      setIsFaceModalOpen(true);
-    } else {
-      setFaceModalStep(1); // skip to register directly
-      setIsFaceModalOpen(true);
-    }
-  };
-
-  const handleVerifyCurrentFace = async (base64Image) => {
-    setVerifying(true);
-    setVerifyError('');
-
-    try {
-      const res = await api.post('/security/verify-face', { image: base64Image });
-      if (res.data.verified) {
-        setVerifyToken(res.data.verifyToken);
-        toast.success('Identity verified! Please register your new face profile.');
-        setFaceModalStep(1); // Proceed to register step
-      } else {
-        setVerifyError(res.data.message || 'Face mismatch. Identity verification failed.');
-        setFaceModalStep(0);
-      }
-    } catch (err) {
-      console.error('Face verify error:', err);
-      setVerifyError(err.response?.data?.message || 'Face verification failed. Please try again.');
-      setFaceModalStep(0);
-    } finally {
-      setVerifying(false);
-    }
-  };
-
-  const handleFaceSuccess = (score) => {
-    setIsFaceModalOpen(false);
-    fetchSecurityData(); // reload status
-  };
 
   const fetchSecurityData = async () => {
     try {
       setLoading(true);
-      const requests = [
-        api.get('/users/sessions'),
-        api.get('/users/login-history'),
-        api.get('/users/me')
-      ];
+      const [sessRes, histRes, faceRes] = await Promise.allSettled([
+        api.get('/security/sessions'),
+        api.get('/security/login-history'),
+        api.get('/face/status'),
+      ]);
 
-      if (user?.role === 'employee') {
-        requests.push(api.get(`/security/face-status/${user.employee_id}`));
+      if (sessRes.status === 'fulfilled' && sessRes.value.data.success) {
+        setSessions(sessRes.value.data.data || []);
       }
-
-      const results = await Promise.all(requests);
-
-      if (results[0].data.success) setSessions(results[0].data.data);
-      if (results[1].data.success) setLoginHistory(results[1].data.data);
-      if (results[2].data.success) setTwoFactorEnabled(results[2].data.data.two_factor_enabled);
-      
-      if (user?.role === 'employee' && results[3]) {
-        setFaceStatus(results[3].data);
+      if (histRes.status === 'fulfilled' && histRes.value.data.success) {
+        setLoginHistory(histRes.value.data.data || []);
       }
-    } catch (error) {
-      console.error('Error fetching security data:', error);
-      toast.error('Failed to load security settings');
+      if (faceRes.status === 'fulfilled' && faceRes.value.data.success) {
+        setFaceStatus(faceRes.value.data.data || { registered: false });
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to load security parameters');
     } finally {
       setLoading(false);
     }
   };
 
-  const handlePasswordChange = async (e) => {
+  useEffect(() => {
+    fetchSecurityData();
+  }, []);
+
+  const handlePasswordUpdate = async (e) => {
     e.preventDefault();
     if (newPassword !== confirmPassword) {
       toast.error('New passwords do not match');
       return;
     }
-    if (passwordStrength.score < 3) {
-      toast.error('Please choose a stronger password');
-      return;
-    }
-
     try {
       setIsChangingPassword(true);
-      const res = await api.post('/users/change-password', {
+      const res = await api.put('/auth/update-password', {
         currentPassword,
-        newPassword
+        newPassword,
       });
       if (res.data.success) {
-        toast.success('Password changed successfully');
+        toast.success('Password updated successfully');
         setCurrentPassword('');
         setNewPassword('');
         setConfirmPassword('');
       }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to change password');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Password update failed');
     } finally {
       setIsChangingPassword(false);
     }
   };
 
-  const handleToggle2FA = async () => {
-    try {
-      setIsUpdating2FA(true);
-      const res = await api.post('/users/2fa', { enabled: !twoFactorEnabled, type: 'email' });
-      if (res.data.success) {
-        setTwoFactorEnabled(!twoFactorEnabled);
-        toast.success(res.data.message);
-      }
-    } catch (error) {
-      toast.error('Failed to update 2FA settings');
-    } finally {
-      setIsUpdating2FA(false);
-    }
-  };
-
   const handleRevokeSession = async (sessionId) => {
     try {
-      const res = await api.delete(`/users/sessions/${sessionId}`);
+      const res = await api.delete(`/security/sessions/${sessionId}`);
       if (res.data.success) {
-        toast.success('Session revoked');
-        setSessions(sessions.filter(s => s.token_jti !== sessionId));
+        toast.success('Session revoked successfully');
+        fetchSecurityData();
       }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to revoke session');
+    } catch (err) {
+      toast.error('Failed to revoke session');
     }
-  };
-
-  const handleRevokeAllOtherSessions = async () => {
-    try {
-      const res = await api.delete('/users/sessions/all');
-      if (res.data.success) {
-        toast.success('All other sessions revoked');
-        setSessions(sessions.filter(s => s.isCurrent));
-      }
-    } catch (error) {
-      toast.error('Failed to revoke sessions');
-    }
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Unknown';
-    const date = new Date(dateString);
-    return date.toLocaleString();
   };
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <LoadingSpinner size="lg" />
-        <p className="mt-4 text-slate-500 font-medium animate-pulse">Loading security settings...</p>
+      <div className="py-20 flex justify-center">
+        <LoadingSpinner size="lg" text="Loading security controls..." />
       </div>
     );
   }
 
-  // Calculate security score
-  let score = 50;
-  if (twoFactorEnabled) score += 30;
-  // If recent password change, add 20 (mocking this as true for now)
-  score += 20;
-
   return (
-    <div className="min-h-screen pb-12 max-w-5xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-slate-800 tracking-tight mb-1">Security Settings</h1>
-        <p className="text-slate-500 font-medium">Manage your account security, passwords, and sessions</p>
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+          Security Settings
+        </h1>
+        <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
+          Manage multi-factor authentication, active devices, and biometric facial access.
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Column */}
-        <div className="space-y-8 lg:col-span-1">
-          {/* Security Score */}
-          <Card className="p-6 text-center border-slate-200">
-            <h3 className="text-lg font-bold text-slate-800 mb-6">Security Score</h3>
-            <div className="relative w-32 h-32 mx-auto mb-4">
-              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r="45" fill="none" stroke="#e2e8f0" strokeWidth="8" />
-                <circle 
-                  cx="50" cy="50" r="45" fill="none" 
-                  stroke={score > 70 ? '#10b981' : score > 40 ? '#f59e0b' : '#ef4444'} 
-                  strokeWidth="8" strokeDasharray={`${score * 2.827} 282.7`} 
-                  strokeLinecap="round" 
-                  className="transition-all duration-1000 ease-out"
-                />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-3xl font-black text-slate-800">{score}</span>
-                <span className="text-[10px] uppercase font-bold text-slate-400">/ 100</span>
+      {/* Biometric Face ID & 2FA Controls */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Face ID Card */}
+        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+                <Camera size={20} />
               </div>
+              <StatusBadge status={faceStatus.registered ? 'active' : 'rejected'} type="dot" />
             </div>
-            <p className="text-sm font-medium text-slate-500 mb-2">
-              {score === 100 ? 'Your account is highly secure.' : 'There is room for improvement.'}
+            <h3 className="text-base font-bold text-slate-900 mt-3">Biometric Face ID</h3>
+            <p className="text-xs text-slate-500 mt-1">
+              {faceStatus.registered
+                ? 'Your face template is registered for high-speed kiosk and attendance check-in.'
+                : 'Register your face to enable instantaneous kiosk check-ins and face login.'}
             </p>
-          </Card>
-
-          {/* 2FA Card */}
-          <Card className="p-6 border-slate-200">
-            <div className="flex items-start gap-4 mb-4">
-              <div className={`p-3 rounded-xl ${twoFactorEnabled ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
-                <Smartphone size={24} />
-              </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-800">Two-Factor Auth</h3>
-                <p className="text-xs text-slate-500 font-medium">Add an extra layer of security</p>
-              </div>
-            </div>
-            <div className="flex items-center justify-between mt-6 bg-slate-50 p-4 rounded-xl border border-slate-100">
-              <span className={`text-sm font-bold ${twoFactorEnabled ? 'text-emerald-600' : 'text-slate-500'}`}>
-                {twoFactorEnabled ? 'Enabled' : 'Disabled'}
-              </span>
-              <button 
-                onClick={handleToggle2FA}
-                disabled={isUpdating2FA}
-                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${twoFactorEnabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
-              >
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${twoFactorEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
-              </button>
-            </div>
-          </Card>
-
-          {/* Face ID Security Card */}
-          {user?.role === 'employee' && (
-            <Card className="p-6 border-slate-200">
-              <div className="flex items-center gap-4 mb-6 pb-4 border-b border-slate-100">
-                <div className="w-12 h-12 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-center text-slate-600">
-                  <ShieldCheck size={24} className="text-blue-600" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-800">Face ID Biometrics</h3>
-                  <p className="text-xs text-slate-500 font-medium">Verify your identity using face recognition</p>
-                </div>
-              </div>
-              
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl">
-                  <span className="text-sm font-semibold text-slate-500">Status</span>
-                  {faceStatus.registered ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Registered
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                      Not Registered
-                    </span>
-                  )}
-                </div>
-
-                {faceStatus.registered && (
-                  <>
-                    <div className="flex items-center justify-between text-xs px-2">
-                      <span className="text-slate-400 font-medium">Registered On</span>
-                      <span className="font-bold text-slate-700">
-                        {new Date(faceStatus.registeredAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs px-2">
-                      <span className="text-slate-400 font-medium">Quality Score</span>
-                      <span className="font-extrabold text-emerald-600">
-                        {faceStatus.qualityScore ? Math.round(faceStatus.qualityScore) : '—'}%
-                      </span>
-                    </div>
-                  </>
-                )}
-
-                <div className="pt-2">
-                  {faceStatus.registered ? (
-                    <Button 
-                      variant="primary" 
-                      onClick={() => handleOpenFaceModal(true)} 
-                      className="w-full justify-center rounded-xl font-bold py-2.5"
-                    >
-                      Update Face ID
-                    </Button>
-                  ) : (
-                    <Button 
-                      variant="success" 
-                      onClick={() => handleOpenFaceModal(false)} 
-                      className="w-full justify-center rounded-xl font-bold py-2.5 shadow-md shadow-emerald-500/10"
-                    >
-                      Register Face ID
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </Card>
-          )}
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-100">
+            <Button
+              size="sm"
+              variant={faceStatus.registered ? 'secondary' : 'primary'}
+              onClick={() => setIsFaceModalOpen(true)}
+              className="w-full"
+            >
+              {faceStatus.registered ? 'Update Face Template' : 'Register Biometrics'}
+            </Button>
+          </div>
         </div>
 
-        {/* Right Column */}
-        <div className="space-y-8 lg:col-span-2">
-          {/* Change Password */}
-          <Card className="p-6 border-slate-200">
-            <h3 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2 pb-4 border-b border-slate-100">
-              <Key className="text-blue-600" size={20} />
-              Change Password
-            </h3>
-            <form onSubmit={handlePasswordChange} className="space-y-5">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Current Password</label>
-                <input
-                  type="password"
-                  required
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700 bg-slate-50 focus:bg-white transition-colors"
-                />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">New Password</label>
-                  <input
-                    type="password"
-                    required
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700 bg-slate-50 focus:bg-white transition-colors"
-                  />
-                  {newPassword && (
-                    <div className="mt-2">
-                      <div className="flex gap-1 h-1.5 mb-1">
-                        <div className={`flex-1 rounded-full ${passwordStrength.score >= 1 ? passwordStrength.color : 'bg-slate-200'}`}></div>
-                        <div className={`flex-1 rounded-full ${passwordStrength.score >= 3 ? passwordStrength.color : 'bg-slate-200'}`}></div>
-                        <div className={`flex-1 rounded-full ${passwordStrength.score >= 4 ? passwordStrength.color : 'bg-slate-200'}`}></div>
-                        <div className={`flex-1 rounded-full ${passwordStrength.score >= 5 ? passwordStrength.color : 'bg-slate-200'}`}></div>
-                      </div>
-                      <span className={`text-[10px] font-bold uppercase ${passwordStrength.score < 3 ? 'text-red-500' : 'text-emerald-500'}`}>
-                        {passwordStrength.label}
-                      </span>
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-bold text-slate-700 mb-2">Confirm New Password</label>
-                  <input
-                    type="password"
-                    required
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700 bg-slate-50 focus:bg-white transition-colors"
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end pt-2">
-                <Button type="submit" disabled={isChangingPassword || passwordStrength.score < 3 || newPassword !== confirmPassword}>
-                  {isChangingPassword ? 'Updating...' : 'Update Password'}
-                </Button>
-              </div>
-            </form>
-          </Card>
-
-          {/* Active Sessions */}
-          <Card className="p-0 overflow-hidden border-slate-200">
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <Monitor className="text-indigo-600" size={20} />
-                Active Sessions
-              </h3>
-              {sessions.length > 1 && (
-                <button 
-                  onClick={handleRevokeAllOtherSessions}
-                  className="text-xs font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-colors"
-                >
-                  Revoke All Other Sessions
-                </button>
-              )}
+        {/* Password Strength Status */}
+        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs flex flex-col justify-between">
+          <div>
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0">
+              <ShieldCheck size={20} />
             </div>
-            <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
-              {sessions.map(session => (
-                <div key={session.token_jti} className="p-4 sm:p-6 hover:bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors">
-                  <div className="flex items-start gap-4">
-                    <div className="p-3 bg-slate-100 text-slate-500 rounded-xl shrink-0">
-                      {session.device_name?.toLowerCase().includes('mac') || session.device_name?.toLowerCase().includes('windows') ? (
-                        <Monitor size={24} />
-                      ) : (
-                        <Smartphone size={24} />
-                      )}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-bold text-slate-800">{session.device_name}</span>
-                        {session.isCurrent && (
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-md">
-                            Current
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm text-slate-500 flex items-center gap-1 mb-0.5">
-                        <Globe size={14} /> {session.browser_name} · {session.ip_address}
-                      </p>
-                      <p className="text-xs text-slate-400 flex items-center gap-1">
-                        <Clock size={12} /> Last active: {formatDate(session.last_activity)}
-                      </p>
-                    </div>
-                  </div>
-                  {!session.isCurrent && (
-                    <button 
-                      onClick={() => handleRevokeSession(session.token_jti)}
-                      className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0 self-start sm:self-center"
-                      title="Revoke session"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                  )}
-                </div>
-              ))}
-              {sessions.length === 0 && (
-                <div className="p-6 text-center text-slate-500">No active sessions found.</div>
-              )}
-            </div>
-          </Card>
-
-          {/* Login History */}
-          <Card className="p-0 overflow-hidden border-slate-200">
-            <div className="p-6 border-b border-slate-100">
-              <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <LogIn className="text-purple-600" size={20} />
-                Recent Login Activity
-              </h3>
-            </div>
-            <div className="divide-y divide-slate-100 max-h-80 overflow-y-auto">
-              {loginHistory.map(entry => (
-                <div key={entry.id} className="p-4 hover:bg-slate-50 flex items-center justify-between transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-2 h-2 rounded-full ${entry.successful ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
-                    <div>
-                      <p className="text-sm font-bold text-slate-700">
-                        {entry.successful ? 'Successful login' : 'Failed login attempt'}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {entry.browser_name} on {entry.device_name} · {entry.ip_address}
-                      </p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-medium text-slate-400">
-                    {formatDate(entry.login_time)}
-                  </span>
-                </div>
-              ))}
-              {loginHistory.length === 0 && (
-                <div className="p-6 text-center text-slate-500">No recent login activity.</div>
-              )}
-            </div>
-          </Card>
+            <h3 className="text-base font-bold text-slate-900 mt-3">Account Security Health</h3>
+            <p className="text-xs text-slate-500 mt-1">
+              Your account is guarded with bcrypt hash authentication and JWT encrypted session tokens.
+            </p>
+          </div>
+          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+            <span>Protected by AbsenceFlow Auth</span>
+            <span className="font-bold text-emerald-600">Active</span>
+          </div>
         </div>
       </div>
 
-      {/* Face ID Capture & Verification Modal */}
-      <Modal 
-        isOpen={isFaceModalOpen} 
-        onClose={() => { setIsFaceModalOpen(false); }} 
-        title={faceModalStep === 0 ? "Verify Your Identity" : "Register Face ID Profile"}
-        size="md"
-      >
-        {faceModalStep === 0 && (
-          <div className="flex flex-col items-center text-center space-y-6">
-            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 w-full">
-              <h4 className="font-bold text-slate-800 text-sm">Step 1: Current Face Verification</h4>
-              <p className="text-slate-500 text-xs mt-1">
-                For security, we must verify your current facial profile before permitting updates.
-              </p>
-            </div>
-
-            {verifyError && (
-              <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4 text-xs text-rose-600 flex items-center gap-2 w-full text-left">
-                <AlertTriangle size={18} className="flex-shrink-0" />
-                <span>{verifyError}</span>
-              </div>
-            )}
-
-            <CameraCapture
-              onCapture={handleVerifyCurrentFace}
-              facingMode="user"
-              showGuide={true}
-              disabled={verifying}
-              actionButtonLabel={verifying ? 'Verifying...' : 'Verify Identity'}
+      {/* Change Password Card */}
+      <Card title="Update Password" subtitle="Choose a strong password with at least 8 characters">
+        <form onSubmit={handlePasswordUpdate} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+              Current Password <span className="text-rose-500">*</span>
+            </label>
+            <PasswordInput
+              required
+              placeholder="Enter current password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
             />
           </div>
-        )}
 
-        {faceModalStep === 1 && (
-          <FaceRegistration
-            employeeId={user?.employee_id}
-            verifyToken={verifyToken}
-            onSuccess={handleFaceSuccess}
-          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                New Password <span className="text-rose-500">*</span>
+              </label>
+              <PasswordInput
+                required
+                placeholder="Min. 8 characters"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Confirm Password <span className="text-rose-500">*</span>
+              </label>
+              <PasswordInput
+                required
+                placeholder="Repeat new password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-3 border-t border-slate-100">
+            <Button type="submit" loading={isChangingPassword}>
+              Save New Password
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      {/* Active Sessions Card */}
+      <Card title="Active Sessions" subtitle="Devices and browsers currently logged into this account">
+        {sessions.length === 0 ? (
+          <div className="py-6 text-center text-slate-400 text-xs">
+            No external active sessions found.
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100 -mx-6 -my-6">
+            {sessions.map((sess) => (
+              <div key={sess.id} className="p-4 sm:p-5 flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-slate-100 text-slate-600 flex items-center justify-center flex-shrink-0">
+                    <Monitor size={18} />
+                  </div>
+                  <div>
+                    <p className="text-xs sm:text-sm font-semibold text-slate-900">
+                      {sess.browser || 'Web Browser'} on {sess.os || 'Desktop'}
+                    </p>
+                    <p className="text-[11px] text-slate-400">
+                      {sess.ip_address || '127.0.0.1'} · Last active {new Date(sess.last_active).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+
+                <Button
+                  size="xs"
+                  variant="secondary"
+                  icon={Trash2}
+                  onClick={() => handleRevokeSession(sess.id)}
+                >
+                  Revoke
+                </Button>
+              </div>
+            ))}
+          </div>
         )}
+      </Card>
+
+      {/* Biometric Registration Modal */}
+      <Modal
+        isOpen={isFaceModalOpen}
+        onClose={() => setIsFaceModalOpen(false)}
+        title="Biometric Face ID Setup"
+        subtitle="Capture face template using your webcam."
+      >
+        <FaceRegistration
+          employeeId={user?.employee_id}
+          onSuccess={() => {
+            setIsFaceModalOpen(false);
+            fetchSecurityData();
+            toast.success('Face biometric template registered successfully!');
+          }}
+        />
       </Modal>
     </div>
   );

@@ -19,8 +19,8 @@ router.get("/", getAbsences);
 router.get("/date/:date", authorizeRoles("manager"), getAbsencesByDate);
 router.get("/:id", getAbsenceById);
 router.post("/", createAbsence);
-router.put("/:id", authorizeRoles("manager"), updateAbsence);
-router.delete("/:id", authorizeRoles("manager"), deleteAbsence);
+router.put("/:id", updateAbsence);
+router.delete("/:id", deleteAbsence);
 router.put("/:id/validate", authorizeRoles("manager"), validateAbsence);
 router.put("/:id/reject", authorizeRoles("manager"), rejectAbsence);
 

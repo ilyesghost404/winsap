@@ -54,6 +54,7 @@ const AppRoutes = () => {
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/activate-account" element={<ActivateAccount />} />
+          <Route path="/activate-account/:token" element={<ActivateAccount />} />
 
           {/* Protected Routes */}
           <Route element={<ProtectedRoute />}>

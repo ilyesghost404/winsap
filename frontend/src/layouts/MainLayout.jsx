@@ -9,14 +9,20 @@ const getPageTitle = (pathname) => {
   const titles = {
     '/dashboard': 'Dashboard',
     '/employees': 'Employees',
-    '/attendance': 'Attendance',
+    '/departments': 'Departments',
+    '/attendance': 'Attendance Management',
     '/leave-requests': 'Leave Requests',
-    '/holidays': 'Holidays',
-    '/reports': 'Reports',
-    '/settings': 'Settings',
+    '/holidays': 'Holiday Calendar',
+    '/reports': 'Reports & Analytics',
+    '/cra': 'Activity Reports (CRA)',
+    '/manager/cra-live-monitor': 'CRA Live Monitor',
+    '/attendance-verification': 'QR Portal',
+    '/qr-portal': 'QR Portal',
     '/users': 'User Management',
-    '/profile': 'Profile',
-    '/cra': 'CRA',
+    '/admin/security': 'Security Center',
+    '/profile': 'My Profile',
+    '/profile/security': 'Security Settings',
+    '/settings': 'Settings',
   };
   return titles[pathname] || 'Dashboard';
 };
@@ -24,55 +30,70 @@ const getPageTitle = (pathname) => {
 const MainLayout = () => {
   const location = useLocation();
   const title = getPageTitle(location.pathname);
-  
-  // Open by default on desktop (width >= 1024px), closed on mobile
-  const [sidebarOpen, setSidebarOpen] = useState(() => {
-    if (typeof window !== "undefined") {
-      return window.innerWidth >= 1024;
+
+  // Mobile drawer open state
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+
+  // Desktop sidebar collapsed state (saved in localStorage)
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('sidebar_collapsed') === 'true';
+    } catch {
+      return false;
     }
-    return true;
   });
 
-  console.log("MainLayout render — innerWidth:", typeof window !== "undefined" ? window.innerWidth : "undefined", "sidebarOpen:", sidebarOpen);
+  const toggleCollapse = () => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
 
+  // Close mobile drawer upon route change
   useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth >= 1024) {
-        setSidebarOpen(true);
-      } else {
-        setSidebarOpen(false);
-      }
-    };
-
-    window.addEventListener('resize', handleResize);
-    // Sync initial state on mount after DevTools constraints apply
-    handleResize();
-
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    setMobileDrawerOpen(false);
+  }, [location.pathname]);
 
   return (
     <SessionTimeout>
-      <div className="flex min-h-screen bg-slate-50 overflow-x-hidden max-w-full">
-      {/* Sidebar */}
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      
-      {/* Overlay for mobile */}
-      {sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
+      <div className="flex min-h-screen bg-slate-50 text-slate-900 overflow-x-clip">
+        {/* Sidebar */}
+        <Sidebar
+          isOpen={mobileDrawerOpen}
+          onClose={() => setMobileDrawerOpen(false)}
+          isCollapsed={isCollapsed}
+          onToggleCollapse={toggleCollapse}
         />
-      )}
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col lg:ml-64 w-full max-w-full overflow-x-hidden">
-        <Navbar title={title} onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
-        <main className="flex-1 p-4 sm:p-6">
-          <Outlet />
-        </main>
-        <Footer />
-      </div>
+        {/* Mobile Backdrop Overlay */}
+        {mobileDrawerOpen && (
+          <div
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-40 lg:hidden transition-opacity"
+            onClick={() => setMobileDrawerOpen(false)}
+          />
+        )}
+
+        {/* Main Content Area */}
+        <div
+          className={`flex-1 flex flex-col min-h-screen w-full transition-all duration-300 ease-in-out ${
+            isCollapsed ? 'lg:ml-20' : 'lg:ml-64'
+          }`}
+        >
+          <Navbar
+            title={title}
+            onMenuClick={() => setMobileDrawerOpen(!mobileDrawerOpen)}
+          />
+
+          <main className="flex-1 p-6 lg:p-8 w-full animate-fade-in">
+            <Outlet />
+          </main>
+
+          <Footer />
+        </div>
       </div>
     </SessionTimeout>
   );

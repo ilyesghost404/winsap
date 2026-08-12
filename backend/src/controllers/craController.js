@@ -87,7 +87,12 @@ const createEntry = async (req, res) => {
       }
     }
 
-    const { ticketReference, description, priority, startDate, endDate, durationMinutes } = req.body;
+    const ticketReference = req.body.ticketReference || req.body.ticket_reference;
+    const description = req.body.description;
+    const priority = req.body.priority;
+    const startDate = req.body.startDate || req.body.start_time;
+    const endDate = req.body.endDate || req.body.end_time;
+    const durationMinutes = req.body.durationMinutes !== undefined ? req.body.durationMinutes : req.body.duration_minutes;
 
     if (!ticketReference || !ticketReference.trim()) {
       return res.status(400).json({ success: false, message: "Ticket reference is required" });
@@ -101,8 +106,41 @@ const createEntry = async (req, res) => {
     if (priority === 'High' || priority === 2 || priority === '2') priorityVal = 2;
     else if (priority === 'Low' || priority === 0 || priority === '0') priorityVal = 0;
 
+    const startImmediately = Boolean(req.body.start_immediately || req.body.startImmediately || req.body.start_timer_now);
+
     let entry;
-    if (startDate && endDate && durationMinutes) {
+    if (startImmediately) {
+      const active = await CraEntry.getActiveTimer(employeeId);
+      if (active) {
+        return res.status(400).json({ success: false, message: "You already have an active running timer." });
+      }
+      entry = await CraEntry.createAndStart({
+        employee_id: parseInt(employeeId, 10),
+        ticket_reference: ticketReference.trim(),
+        description: description.trim(),
+        priority: priorityVal
+      });
+
+      try {
+        const empRes = await db.query(
+          "SELECT first_name, last_name FROM employees WHERE id = $1",
+          [employeeId]
+        );
+        const emp = empRes.rows[0];
+        const employeeName = emp ? `${emp.first_name} ${emp.last_name}` : "Employee";
+        const io = socketUtil.getIo();
+        io.to("managers").emit("cra_started", {
+          id: entry.id,
+          employeeId: entry.employee_id,
+          employeeName,
+          ticketReference: entry.ticket_reference,
+          description: entry.description,
+          startTime: entry.start_time
+        });
+      } catch (err) {
+        console.error("Failed to broadcast cra_started event:", err.message);
+      }
+    } else if (startDate && endDate && durationMinutes) {
       entry = await CraEntry.createManual({
         employee_id: parseInt(employeeId, 10),
         ticket_reference: ticketReference.trim(),
@@ -161,7 +199,8 @@ const startActivity = async (req, res) => {
       return res.status(400).json({ success: false, message: "You already have an active running timer." });
     }
 
-    const { ticketReference, description } = req.body;
+    const ticketReference = req.body.ticketReference || req.body.ticket_reference;
+    const description = req.body.description;
 
     if (!ticketReference || !ticketReference.trim()) {
       return res.status(400).json({ success: false, message: "Ticket reference is required" });
@@ -337,7 +376,12 @@ const updateEntry = async (req, res) => {
       return res.status(403).json({ success: false, message: "Approved activities cannot be edited" });
     }
 
-    const { ticketReference, description, priority, startDate, endDate, durationMinutes } = req.body;
+    const ticketReference = req.body.ticketReference || req.body.ticket_reference;
+    const description = req.body.description;
+    const priority = req.body.priority;
+    const startDate = req.body.startDate || req.body.start_time;
+    const endDate = req.body.endDate || req.body.end_time;
+    const durationMinutes = req.body.durationMinutes !== undefined ? req.body.durationMinutes : req.body.duration_minutes;
 
     if (!ticketReference || !ticketReference.trim()) {
       return res.status(400).json({ success: false, message: "Ticket reference is required" });
@@ -546,7 +590,67 @@ const getLiveActivities = async (req, res) => {
     res.status(500).json({ success: false, message: "Failed to fetch live CRA data" });
   }
 };
+/**
+ * GET /api/cra/monthly-stats
+ * Returns monthly hours, days, and productivity stats.
+ */
+const getMonthlyStats = async (req, res) => {
+  try {
+    if (req.user.role === 'employee') {
+      const employeeId = req.user.employee_id;
+      if (!employeeId) {
+        return res.json({ success: true, data: { total_hours_month: 0, total_days_month: 0, completed_this_week: 0, avg_duration_minutes: 0 } });
+      }
+      const stats = await CraEntry.getMonthlyStatsByEmployee(employeeId);
+      return res.json({ success: true, data: stats });
+    }
 
+    const stats = await CraEntry.getMonthlyTeamStats();
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    console.error("Error in getMonthlyStats:", error);
+    res.status(500).json({ success: false, message: "Failed to fetch monthly statistics" });
+  }
+};
+
+/**
+ * GET /api/cra/control-center
+ * Returns full real-time control center data for manager dashboard (stats + live feed).
+ */
+const getControlCenterData = async (req, res) => {
+  try {
+    const [stats, feed] = await Promise.all([
+      CraEntry.getControlCenterStats(),
+      CraEntry.getLiveFeed(25)
+    ]);
+    res.json({
+      success: true,
+      data: {
+        stats,
+        feed
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("Error in getControlCenterData:", error);
+    res.status(500).json({ success: false, message: "Failed to fetch control center data" });
+  }
+};
+
+/**
+ * GET /api/cra/employee-summary/:employeeId
+ * Returns read-only monitor summary for an employee.
+ */
+const getEmployeeMonitorSummary = async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+    const summary = await CraEntry.getEmployeeMonitorSummary(employeeId);
+    res.json({ success: true, data: summary });
+  } catch (error) {
+    console.error("Error in getEmployeeMonitorSummary:", error);
+    res.status(500).json({ success: false, message: "Failed to fetch employee summary" });
+  }
+};
 
 module.exports = {
   getMyActivities,
@@ -560,5 +664,9 @@ module.exports = {
   approveEntry,
   rejectEntry,
   getStats,
-  getLiveActivities
+  getMonthlyStats,
+  getLiveActivities,
+  getControlCenterData,
+  getEmployeeMonitorSummary
 };
+

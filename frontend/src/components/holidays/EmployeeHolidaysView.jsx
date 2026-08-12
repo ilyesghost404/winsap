@@ -1,16 +1,32 @@
-import { useState, useMemo } from 'react';
-import { 
-  ChevronLeft, ChevronRight, CalendarDays, Calendar as CalendarIcon, Filter, Clock, Info, CheckCircle2 
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  ChevronLeft, ChevronRight, CalendarDays, Calendar as CalendarIcon, Zap, Sparkles, CheckCircle2
 } from 'lucide-react';
 import Card from '../Card';
-import StatsCard from '../StatsCard';
-import Modal from '../Modal';
+import LoadingSpinner from '../LoadingSpinner';
+import { getHolidays } from '../../services/holidayService';
 
 const TYPE_COLORS = {
-  National: { bg: 'bg-blue-100', text: 'text-blue-700', hex: '#2563eb' },
-  Religious: { bg: 'bg-green-100', text: 'text-green-700', hex: '#16a34a' },
-  Company: { bg: 'bg-purple-100', text: 'text-purple-700', hex: '#9333ea' },
-  Optional: { bg: 'bg-amber-100', text: 'text-amber-700', hex: '#d97706' },
+  National: {
+    bg: 'bg-[#e7f0fa] text-[#0064e0] border-[#dde5ec]',
+    dot: 'bg-[#0064e0]',
+    badge: 'bg-[#0064e0] text-white',
+  },
+  Religious: {
+    bg: 'bg-[#f5f3ff] text-[#7c3aed] border-[#ddd6fe]',
+    dot: 'bg-[#7c3aed]',
+    badge: 'bg-[#7c3aed] text-white',
+  },
+  Company: {
+    bg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    dot: 'bg-emerald-600',
+    badge: 'bg-emerald-600 text-white',
+  },
+  Other: {
+    bg: 'bg-slate-100 text-slate-700 border-slate-200',
+    dot: 'bg-slate-500',
+    badge: 'bg-slate-600 text-white',
+  },
 };
 
 const getDaysInMonth = (year, month) => {
@@ -18,37 +34,45 @@ const getDaysInMonth = (year, month) => {
   const firstDay = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const daysInPrevMonth = new Date(year, month, 0).getDate();
-  
-  // Prev month padded days
-  for (let i = firstDay - 1; i >= 0; i--) {
+
+  // Mon as 0
+  let startDayOfWeek = firstDay - 1;
+  if (startDayOfWeek === -1) startDayOfWeek = 6;
+
+  for (let i = startDayOfWeek - 1; i >= 0; i--) {
     days.push({
       date: new Date(year, month - 1, daysInPrevMonth - i),
-      isCurrentMonth: false
+      isCurrentMonth: false,
     });
   }
-  
-  // Current month days
+
   for (let i = 1; i <= daysInMonth; i++) {
     days.push({
       date: new Date(year, month, i),
-      isCurrentMonth: true
+      isCurrentMonth: true,
     });
   }
-  
-  // Next month padded days
+
   const remaining = 42 - days.length;
   for (let i = 1; i <= remaining; i++) {
     days.push({
       date: new Date(year, month + 1, i),
-      isCurrentMonth: false
+      isCurrentMonth: false,
     });
   }
-  
+
   return days;
 };
 
-const formatDate = (date) => {
+const formatLocalDate = (date) => {
   if (!date) return '';
+  if (typeof date === 'string') {
+    const clean = date.includes('T') ? date.split('T')[0] : date;
+    const parts = clean.split('-');
+    if (parts.length === 3) {
+      return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    }
+  }
   const d = new Date(date);
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -56,153 +80,238 @@ const formatDate = (date) => {
   return `${year}-${month}-${day}`;
 };
 
-const EmployeeHolidaysView = ({ holidays, stats }) => {
+const parseLocalDate = (dateStr) => {
+  if (!dateStr) return null;
+  if (dateStr instanceof Date) return dateStr;
+  const cleanStr = String(dateStr).includes('T') ? String(dateStr).split('T')[0] : String(dateStr);
+  const [year, month, day] = cleanStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const EmployeeHolidaysView = ({ holidays: initialHolidays, loading: parentLoading }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [holidaysList, setHolidaysList] = useState(Array.isArray(initialHolidays) ? initialHolidays : []);
+  const [loading, setLoading] = useState(parentLoading ?? false);
 
-  const goToPreviousMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
-  const goToNextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
-  const goToToday = () => setCurrentDate(new Date());
+  const year = currentDate.getFullYear();
+  const month = currentDate.getMonth();
 
-  const days = useMemo(() => {
-    return getDaysInMonth(currentDate.getFullYear(), currentDate.getMonth());
-  }, [currentDate]);
+  const fetchHolidaysForYear = useCallback(async (targetYear) => {
+    try {
+      setLoading(true);
+      const res = await getHolidays(targetYear);
+      setHolidaysList(Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : []);
+    } catch (err) {
+      console.error('Error fetching employee holidays:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  const holidaysByDate = useMemo(() => {
+  useEffect(() => {
+    if (Array.isArray(initialHolidays) && initialHolidays.length > 0) {
+      setHolidaysList(initialHolidays);
+    } else {
+      fetchHolidaysForYear(year);
+    }
+  }, [initialHolidays, year, fetchHolidaysForYear]);
+
+  const days = useMemo(() => getDaysInMonth(year, month), [year, month]);
+
+  const holidaysMap = useMemo(() => {
     const map = {};
-    holidays.forEach(h => {
-      const dateStr = h.holiday_date;
-      if (!map[dateStr]) map[dateStr] = [];
-      map[dateStr].push(h);
+    holidaysList.forEach((h) => {
+      const startStr = formatLocalDate(h.start_date || h.holiday_date);
+      const endStr = formatLocalDate(h.end_date || h.start_date || h.holiday_date);
+      if (startStr && endStr) {
+        let cur = parseLocalDate(startStr);
+        const end = parseLocalDate(endStr);
+        while (cur <= end) {
+          const dStr = formatLocalDate(cur);
+          if (!map[dStr]) map[dStr] = [];
+          if (!map[dStr].some((item) => item.id === h.id)) {
+            map[dStr].push(h);
+          }
+          cur.setDate(cur.getDate() + 1);
+        }
+      }
     });
     return map;
-  }, [holidays]);
+  }, [holidaysList]);
 
-  const handleDayClick = (date) => {
-    const dateStr = formatDate(date);
-    const dayHolidays = holidaysByDate[dateStr] || [];
-    if (dayHolidays.length > 0) {
-      setSelectedDate(date);
-      setIsModalOpen(true);
-    }
+  const prevMonth = () => {
+    setCurrentDate(new Date(year, month - 1, 1));
   };
 
-  const selectedHolidays = selectedDate ? (holidaysByDate[formatDate(selectedDate)] || []) : [];
+  const nextMonth = () => {
+    setCurrentDate(new Date(year, month + 1, 1));
+  };
+
+  const monthHolidays = useMemo(() => {
+    return holidaysList.filter((h) => {
+      const startStr = formatLocalDate(h.start_date || h.holiday_date);
+      const endStr = formatLocalDate(h.end_date || h.start_date || h.holiday_date);
+      if (!startStr || !endStr) return false;
+      const cur = parseLocalDate(startStr);
+      const end = parseLocalDate(endStr);
+      while (cur <= end) {
+        if (cur.getFullYear() === year && cur.getMonth() === month) {
+          return true;
+        }
+        cur.setDate(cur.getDate() + 1);
+      }
+      return false;
+    });
+  }, [holidaysList, year, month]);
 
   return (
-    <div className="space-y-8">
-      {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Holidays</h1>
-          <p className="text-slate-500 font-medium mt-1">View public, religious, and company holidays</p>
+    <div className="space-y-6">
+      {/* Hero Banner */}
+      <div className="rounded-3xl bg-gradient-to-r from-[#1c2b33] via-[#0064e0] to-[#0082fb] p-6 sm:p-8 text-white shadow-electric-glow border border-blue-400/30 relative overflow-hidden">
+        <div className="relative z-10 flex items-center gap-2 text-xs font-extrabold uppercase tracking-widest text-blue-100 font-heading mb-1">
+          <Zap size={14} className="text-blue-100" />
+          <span>Personal Workspace</span>
         </div>
+        <h1 className="text-2xl sm:text-3xl font-heading font-black tracking-tight text-white uppercase">
+          Company Holiday Calendar
+        </h1>
+        <p className="text-blue-100 text-xs sm:text-sm mt-1 max-w-xl font-medium">
+          View official national, religious, and company non-working dates for the year.
+        </p>
+
+        {/* Ambient Glow */}
+        <div className="absolute -right-20 -top-20 w-80 h-80 bg-white/15 rounded-full blur-3xl pointer-events-none" />
       </div>
 
-      {/* Dashboard Widgets */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <StatsCard 
-          title="Total" 
-          value={stats?.total ?? 0} 
-          icon={CalendarDays} 
-          colorClass="text-blue-600" 
-          bgClass="bg-blue-50" 
-          borderClass="border-t-blue-500" 
-        />
-        <StatsCard 
-          title="This Year" 
-          value={stats?.thisYear ?? 0} 
-          icon={CalendarIcon} 
-          colorClass="text-emerald-600" 
-          bgClass="bg-emerald-50" 
-          borderClass="border-t-emerald-500" 
-        />
-        <StatsCard 
-          title="This Month" 
-          value={stats?.thisMonth ?? 0} 
-          icon={Filter} 
-          colorClass="text-amber-600" 
-          bgClass="bg-amber-50" 
-          borderClass="border-t-amber-500" 
-        />
-        <StatsCard 
-          title="Next Holiday" 
-          value={stats?.nextHoliday ? stats.nextHoliday.name : 'None scheduled'} 
-          subtitle={stats?.nextHoliday ? `In ${stats.daysUntilNext} day${stats.daysUntilNext !== 1 ? 's' : ''}` : ''}
-          icon={Clock} 
-          colorClass="text-purple-700" 
-          bgClass="bg-purple-50" 
-          borderClass="border-t-purple-500" 
-        />
-      </div>
+      {/* Calendar Card with Gradient Header */}
+      <Card
+        headerVariant="blue"
+        title={
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 w-full text-white">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-white/20 text-white flex items-center justify-center border border-white/30 shadow-inner">
+                <CalendarDays size={18} />
+              </div>
+              <div>
+                <h2 className="text-base font-black text-white uppercase tracking-wide font-heading">
+                  {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                </h2>
+                <p className="text-[11px] text-blue-100 font-normal">
+                  {monthHolidays.length} official holiday event{monthHolidays.length !== 1 ? 's' : ''} this month
+                </p>
+              </div>
+            </div>
 
-      {/* Calendar Grid Container */}
-      <Card className="p-0 overflow-hidden shadow-sm border-slate-200">
-        <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <h2 className="text-xl font-black text-slate-800 tracking-tight">
-            {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-          </h2>
-          <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1">
-            <button onClick={goToPreviousMonth} className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition-all"><ChevronLeft size={20}/></button>
-            <button onClick={goToToday} className="px-3 py-1.5 text-sm font-bold rounded-lg hover:bg-white hover:shadow-sm text-slate-700 transition-all">Today</button>
-            <button onClick={goToNextMonth} className="p-1.5 rounded-lg hover:bg-white hover:shadow-sm text-slate-600 transition-all"><ChevronRight size={20}/></button>
+            {/* Navigation Controls */}
+            <div className="flex items-center gap-1.5 bg-white/15 backdrop-blur-xs border border-white/30 rounded-xl p-1 shadow-2xs">
+              <button
+                onClick={prevMonth}
+                className="p-1.5 text-white hover:bg-white/20 rounded-lg transition-colors cursor-pointer"
+                title="Previous Month"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <button
+                onClick={() => setCurrentDate(new Date())}
+                className="px-2.5 py-1 text-xs font-bold text-white hover:bg-white/20 rounded-lg transition-colors cursor-pointer"
+              >
+                Today
+              </button>
+              <button
+                onClick={nextMonth}
+                className="p-1.5 text-white hover:bg-white/20 rounded-lg transition-colors cursor-pointer"
+                title="Next Month"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
           </div>
-        </div>
-
-        <div className="w-full overflow-x-auto">
-          <div className="min-w-[700px]">
-            {/* Weekday headers */}
-            <div className="grid grid-cols-7 bg-slate-50/50 border-b border-slate-100">
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
-                <div key={day} className="py-3 text-center text-xs font-bold tracking-wider text-slate-500 uppercase">
-                  {day}
+        }
+      >
+        {loading ? (
+          <div className="py-16 flex justify-center">
+            <LoadingSpinner size="md" text="Loading holiday calendar…" />
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {/* Weekday Column Headers */}
+            <div className="grid grid-cols-7 gap-1.5 text-center font-extrabold text-xs text-[#0064e0] uppercase tracking-wider py-2 border-b border-[#dde5ec] bg-[#f1f5f8] rounded-xl font-heading">
+              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayName, idx) => (
+                <div
+                  key={dayName}
+                  className={`py-0.5 ${idx >= 5 ? 'text-[#0082fb] font-semibold' : 'text-[#0064e0]'}`}
+                >
+                  {dayName}
                 </div>
               ))}
             </div>
 
-            {/* Days Grid */}
-            <div className="grid grid-cols-7 auto-rows-fr bg-slate-200 gap-[1px]">
-              {days.map((dayObj, i) => {
-                const { date, isCurrentMonth } = dayObj;
-                const dateStr = formatDate(date);
-                const dayHolidays = holidaysByDate[dateStr] || [];
-                const isToday = formatDate(new Date()) === dateStr;
-                const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+            {/* 7-Column Calendar Grid */}
+            <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
+              {days.map((item, index) => {
+                const formatted = formatLocalDate(item.date);
+                const dayHolidays = holidaysMap[formatted] || [];
+                const isToday = formatLocalDate(new Date()) === formatted;
+                const hasHoliday = dayHolidays.length > 0;
+
+                const dayOfWeek = item.date.getDay();
+                const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
                 return (
-                  <div 
-                    key={i}
-                    onClick={() => handleDayClick(date)}
+                  <div
+                    key={index}
                     className={`
-                      min-h-[120px] p-2 transition-all group
-                      ${!isCurrentMonth ? 'bg-slate-50/80 text-slate-400' : 'bg-white'}
-                      ${isWeekend && isCurrentMonth ? 'bg-slate-50/30' : ''}
-                      ${dayHolidays.length > 0 ? 'cursor-pointer hover:bg-blue-50/30' : ''}
+                      min-h-[85px] sm:min-h-[95px] p-2 rounded-xl border transition-all duration-150 flex flex-col justify-between select-none
+                      ${
+                        isToday
+                          ? 'bg-[#e7f0fa] border-[#0064e0] ring-2 ring-[#0082fb]/50 shadow-xs'
+                          : hasHoliday
+                          ? 'bg-[#e7f0fa] border-[#dde5ec] shadow-2xs'
+                          : item.isCurrentMonth
+                          ? isWeekend
+                            ? 'bg-[#f8fafc] border-[#e2e8f0]'
+                            : 'bg-white border-[#dde5ec]'
+                          : 'bg-[#f8fafc]/50 border-slate-100 opacity-40'
+                      }
                     `}
                   >
-                    <div className="flex justify-between items-start mb-1.5">
-                      <span className={`
-                        flex items-center justify-center w-7 h-7 rounded-full text-sm font-semibold transition-all
-                        ${isToday ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : ''}
-                        ${!isToday && isCurrentMonth ? 'text-slate-700 group-hover:text-blue-600' : ''}
-                      `}>
-                        {date.getDate()}
+                    <div className="flex items-center justify-between gap-1">
+                      <span
+                        className={`
+                          text-xs font-black font-mono inline-flex items-center justify-center w-6 h-6 rounded-lg transition-colors
+                          ${
+                            isToday
+                              ? 'bg-[#0064e0] text-white shadow-xs'
+                              : hasHoliday
+                              ? 'text-[#0064e0] bg-[#e7f0fa]'
+                              : item.isCurrentMonth
+                              ? 'text-[#1c2b33]'
+                              : 'text-slate-400'
+                          }
+                        `}
+                      >
+                        {item.date.getDate()}
                       </span>
+                      {isToday && (
+                        <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.2 rounded bg-[#0064e0] text-white font-heading">
+                          Today
+                        </span>
+                      )}
                     </div>
 
-                    <div className="space-y-1.5 mt-1">
-                      {dayHolidays.map((h, idx) => {
-                        const typeStyle = TYPE_COLORS[h.type || 'National'] || TYPE_COLORS.National;
+                    <div className="mt-1 space-y-1">
+                      {dayHolidays.map((h) => {
+                        const style = TYPE_COLORS[h.type] || TYPE_COLORS.National;
                         return (
-                          <div 
-                            key={idx}
-                            className={`px-2 py-1.5 rounded-lg text-xs font-semibold truncate shadow-sm transition-transform hover:scale-[1.02] ${typeStyle.bg} ${typeStyle.text}`}
-                            title={h.name}
+                          <div
+                            key={h.id}
+                            className={`px-1.5 py-1 rounded-lg text-[10px] font-bold border truncate flex items-center gap-1 ${style.bg}`}
+                            title={`${h.name} (${h.type}): ${h.description || 'Public holiday'}`}
                           >
-                            {h.name}
+                            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${style.dot}`} />
+                            <span className="truncate">{h.name}</span>
                           </div>
-                        )
+                        );
                       })}
                     </div>
                   </div>
@@ -210,78 +319,49 @@ const EmployeeHolidaysView = ({ holidays, stats }) => {
               })}
             </div>
           </div>
-        </div>
-
-        <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-center gap-6">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-            <div className="w-3 h-3 rounded-full bg-blue-100 border border-blue-300"></div> National
-          </div>
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-            <div className="w-3 h-3 rounded-full bg-green-100 border border-green-300"></div> Religious
-          </div>
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-            <div className="w-3 h-3 rounded-full bg-purple-100 border border-purple-300"></div> Company
-          </div>
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-            <div className="w-3 h-3 rounded-full bg-amber-100 border border-amber-300"></div> Optional
-          </div>
-        </div>
+        )}
       </Card>
 
-      {/* Holiday Details Modal */}
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        title={selectedDate ? selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : 'Holiday Details'}
+      {/* Holidays of this Month */}
+      <Card
+        headerVariant="softBlue"
+        title={`Holidays in ${currentDate.toLocaleDateString('en-US', { month: 'long' })}`}
+        subtitle="Official non-working days scheduled for this month"
       >
-        <div className="space-y-4">
-          {selectedHolidays.map((h, i) => {
-            const typeStyle = TYPE_COLORS[h.type || 'National'] || TYPE_COLORS.National;
-            return (
-              <div key={i} className="p-5 bg-white border border-slate-100 rounded-2xl shadow-sm space-y-3 relative overflow-hidden">
-                {/* Accent border left */}
-                <div 
-                  className="absolute left-0 top-0 bottom-0 w-1.5" 
-                  style={{ backgroundColor: typeStyle.hex }} 
-                />
-                
-                <div className="flex items-start justify-between pl-2">
-                  <div>
-                    <h3 className="text-lg font-bold text-slate-800">{h.name}</h3>
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${typeStyle.bg} ${typeStyle.text}`}>
-                        {h.type || 'National'}
-                      </span>
-                      {h.recurring && (
-                        <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">
-                          <CheckCircle2 size={12} /> Recurring
-                        </span>
-                      )}
+        {monthHolidays.length === 0 ? (
+          <div className="py-8 text-center text-slate-400 text-xs">
+            <CalendarDays size={24} className="mx-auto text-slate-300 mb-2 opacity-60" />
+            <p className="font-semibold text-slate-600">No official holidays scheduled for this month.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-[#e7f0fa]">
+            {monthHolidays.map((h) => {
+              const startStr = formatLocalDate(h.start_date || h.holiday_date);
+              const endStr = formatLocalDate(h.end_date || h.start_date || h.holiday_date);
+              const typeClass = TYPE_COLORS[h.type] || TYPE_COLORS.National;
+
+              return (
+                <div key={h.id} className="py-3 flex items-center justify-between gap-4 first:pt-0 last:pb-0">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8.5 h-8.5 rounded-xl bg-[#e7f0fa] text-[#0064e0] flex items-center justify-center flex-shrink-0 border border-[#dde5ec] shadow-2xs">
+                      <CalendarDays size={16} />
+                    </div>
+                    <div>
+                      <p className="font-bold text-[#1c2b33] text-xs sm:text-sm">{h.name}</p>
+                      <p className="text-[11px] text-slate-500 font-mono">
+                        {startStr === endStr ? startStr : `${startStr} → ${endStr}`}
+                      </p>
                     </div>
                   </div>
+                  <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-lg border ${typeClass.bg}`}>
+                    {h.type}
+                  </span>
                 </div>
-
-                {h.description && (
-                  <div className="pt-3 border-t border-slate-50 pl-2">
-                    <p className="text-sm text-slate-600 flex items-start gap-2">
-                      <Info className="shrink-0 text-slate-400 mt-0.5" size={16} />
-                      {h.description}
-                    </p>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        <div className="mt-6 flex justify-end">
-          <button 
-            onClick={() => setIsModalOpen(false)}
-            className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors"
-          >
-            Close
-          </button>
-        </div>
-      </Modal>
+              );
+            })}
+          </div>
+        )}
+      </Card>
     </div>
   );
 };

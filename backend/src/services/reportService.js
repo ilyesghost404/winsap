@@ -211,12 +211,19 @@ async function generateDetailedAttendanceReport(filters) {
     const employees = employeesResult.rows;
 
     const holidaysResult = await db.query(
-        "SELECT holiday_date, name FROM holidays WHERE holiday_date BETWEEN $1 AND $2",
-        [startDateStr, endDateStr]
+        "SELECT holiday_date, COALESCE(end_date, holiday_date) AS end_date, name FROM holidays WHERE holiday_date <= $2 AND COALESCE(end_date, holiday_date) >= $1",
+        [endDateStr, startDateStr]
     );
     const holidayMap = {};
     holidaysResult.rows.forEach(h => {
-        holidayMap[toDateString(h.holiday_date)] = h.name;
+        const hStartStr = toDateString(h.holiday_date);
+        const hEndStr = toDateString(h.end_date);
+        const curStart = new Date(Math.max(new Date(hStartStr).getTime(), new Date(startDateStr).getTime()));
+        const curEnd = new Date(Math.min(new Date(hEndStr).getTime(), new Date(endDateStr).getTime()));
+        for (let d = new Date(curStart); d <= curEnd; d.setDate(d.getDate() + 1)) {
+            const dateStr = toDateString(d);
+            holidayMap[dateStr] = h.name;
+        }
     });
 
     const absencesResult = await db.query(

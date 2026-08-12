@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo } from 'react';
 import toast from 'react-hot-toast';
-import { 
-  RefreshCw, Search, Filter, LogIn, LogOut, CheckCircle2, 
-  Users, UserCheck, UserX, Clock, AlertCircle, X, TrendingUp
+import {
+  RefreshCw, Search, Filter, LogIn, LogOut, CheckCircle2,
+  Users, UserCheck, UserX, Clock, AlertCircle, X, Zap
 } from 'lucide-react';
-import Button from '../../components/Button';
-import LoadingSpinner, { SkeletonTable } from '../../components/LoadingSpinner';
-import EmptyState from '../../components/EmptyState';
-import Pagination from '../../components/Pagination';
+import Button from '../Button';
+import { SkeletonTable } from '../LoadingSpinner';
+import EmptyState from '../EmptyState';
+import Pagination from '../Pagination';
+import StatusBadge from '../StatusBadge';
 import { getTodayAttendance, checkIn, checkOut } from '../../services/presenceService';
 
 const PresenceTab = () => {
@@ -24,8 +25,8 @@ const PresenceTab = () => {
       const data = await getTodayAttendance({ page: 1, limit: 1000, search: '' });
       setAttendanceData(data.data || []);
     } catch (error) {
-      console.error("Error fetching attendance:", error);
-      toast.error("Failed to load attendance");
+      console.error('Error fetching attendance:', error);
+      toast.error('Failed to load attendance');
     } finally {
       setLoading(false);
     }
@@ -38,158 +39,176 @@ const PresenceTab = () => {
   const handleCheckIn = async (employeeId) => {
     try {
       await checkIn(employeeId);
-      toast.success("Check-in successful!");
+      toast.success('Check-in recorded successfully!');
       fetchData();
     } catch (error) {
-      console.error("Error checking in:", error);
-      toast.error(error.response?.data?.message || "Check-in failed");
+      console.error('Error checking in:', error);
+      toast.error(error.response?.data?.message || 'Check-in failed');
     }
   };
 
   const handleCheckOut = async (employeeId) => {
     try {
       await checkOut(employeeId);
-      toast.success("Check-out successful!");
+      toast.success('Check-out recorded successfully!');
       fetchData();
     } catch (error) {
-      console.error("Error checking out:", error);
-      toast.error(error.response?.data?.message || "Check-out failed");
+      console.error('Error checking out:', error);
+      toast.error(error.response?.data?.message || 'Check-out failed');
     }
   };
 
   const formatTime = (time) => {
-    if (!time) return "—";
-    if (typeof time === 'string') {
-      return time.slice(0, 5);
+    if (!time) return '—';
+    try {
+      if (time.includes(':')) {
+        const [hours, minutes] = time.split(':');
+        return `${hours.padStart(2, '0')}:${minutes.padStart(2, '0')}`;
+      }
+      const d = new Date(time);
+      return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return time;
     }
-    return time;
   };
 
-  const getStatusDisplay = (attendance) => {
-    if (!attendance.check_in) {
-      return { label: "Not Checked In", color: "text-slate-500", bg: "bg-slate-100", icon: AlertCircle, dotColor: "bg-slate-400" };
-    }
-    if (attendance.check_out) {
-      return { label: attendance.status || "Present", color: "text-emerald-700", bg: "bg-emerald-50", icon: CheckCircle2, dotColor: "bg-emerald-500" };
-    }
-    return { label: "Checked In", color: "text-blue-700", bg: "bg-blue-50", icon: Clock, dotColor: "bg-blue-500" };
-  };
+  // Filter attendance records
+  const filteredData = useMemo(() => {
+    return attendanceData.filter((item) => {
+      const name = `${item.first_name || ''} ${item.last_name || ''}`.toLowerCase();
+      const matricule = (item.matricule || '').toLowerCase();
+      const matchesSearch =
+        !searchTerm ||
+        name.includes(searchTerm.toLowerCase()) ||
+        matricule.includes(searchTerm.toLowerCase());
 
-  // Calculate statistics
-  const stats = useMemo(() => {
-    const total = attendanceData.length;
-    const present = attendanceData.filter(a => a.check_in).length;
-    const absent = total - present;
-    const checkedOut = attendanceData.filter(a => a.check_in && a.check_out).length;
-    const checkedIn = attendanceData.filter(a => a.check_in && !a.check_out).length;
-    const attendancePercentage = total > 0 ? Math.round((present / total) * 100) : 0;
+      let matchesStatus = true;
+      if (statusFilter === 'Present') matchesStatus = !!item.check_in && !item.check_out;
+      if (statusFilter === 'Completed') matchesStatus = !!item.check_in && !!item.check_out;
+      if (statusFilter === 'Absent') matchesStatus = !item.check_in;
 
-    return { total, present, absent, checkedOut, checkedIn, attendancePercentage };
-  }, [attendanceData]);
+      return matchesSearch && matchesStatus;
+    });
+  }, [attendanceData, searchTerm, statusFilter]);
 
-  const filteredData = attendanceData.filter(record => {
-    const fullName = `${record.first_name} ${record.last_name}`.toLowerCase();
-    const matchesSearch = !searchTerm || 
-      fullName.includes(searchTerm.toLowerCase()) ||
-      record.matricule.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    let status = "Not Checked In";
-    if (record.check_in) {
-      status = record.check_out ? "Checked Out" : "Checked In";
-    }
-    const matchesFilter = !statusFilter || status.toLowerCase().includes(statusFilter.toLowerCase());
-    
-    return matchesSearch && matchesFilter;
-  });
+  // Paginated records
+  const paginatedData = useMemo(() => {
+    const startIndex = (page - 1) * limit;
+    return filteredData.slice(startIndex, startIndex + limit);
+  }, [filteredData, page]);
 
-  const paginatedData = filteredData.slice((page - 1) * limit, page * limit);
+  const totalPages = Math.ceil(filteredData.length / limit);
 
-  const getInitials = (firstName, lastName) => {
-    const f = firstName ? firstName.charAt(0) : '';
-    const l = lastName ? lastName.charAt(0) : '';
-    return `${f}${l}`.toUpperCase();
-  };
-
-  const statItems = [
-    { label: 'Present', value: stats.present, icon: UserCheck, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { label: 'Absent', value: stats.absent, icon: UserX, color: 'text-rose-600', bg: 'bg-rose-50' },
-    { label: 'Attendance', value: `${stats.attendancePercentage}%`, icon: TrendingUp, color: 'text-blue-600', bg: 'bg-blue-50' },
-  ];
+  // Statistics
+  const presentCount = attendanceData.filter((item) => !!item.check_in && !item.check_out).length;
+  const completedCount = attendanceData.filter((item) => !!item.check_in && !!item.check_out).length;
+  const absentCount = attendanceData.filter((item) => !item.check_in).length;
 
   return (
-    <div className="space-y-6">
-      {/* Compact Stats Bar */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
-        <div className="flex flex-wrap items-center gap-6">
-          {/* Date badge */}
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-100 rounded-xl">
-            <Clock size={14} className="text-blue-600" />
-            <span className="text-blue-700 text-sm font-semibold">
-              {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-            </span>
+    <div className="space-y-4">
+      {/* Overview Statistics Row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-white rounded-2xl border border-[#d5e2f1] p-4 flex items-center gap-3 shadow-premium-sm">
+          <div className="w-10 h-10 rounded-xl bg-[#eef5ff] text-[#1e54a9] flex items-center justify-center flex-shrink-0 border border-[#d5e2f1]">
+            <Users size={20} />
           </div>
-
-          <div className="h-8 w-px bg-slate-200 hidden sm:block" />
-
-          {/* Stats inline */}
-          <div className="flex items-center gap-4 flex-1">
-            {statItems.map((item) => {
-              const Icon = item.icon;
-              return (
-                <div key={item.label} className="flex items-center gap-2">
-                  <div className={`p-1.5 rounded-lg ${item.bg}`}>
-                    <Icon size={14} className={item.color} />
-                  </div>
-                  <div>
-                    <p className="text-lg font-black text-slate-800 leading-none">{item.value}</p>
-                    <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">{item.label}</p>
-                  </div>
-                </div>
-              );
-            })}
+          <div>
+            <p className="text-xl font-heading font-black text-[#172033]">{attendanceData.length}</p>
+            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider font-heading">Total Tracked</p>
           </div>
+        </div>
 
-          <Button
-            variant="secondary"
-            icon={RefreshCw}
-            onClick={fetchData}
-            disabled={loading}
-            size="sm"
-          >
-            Refresh
-          </Button>
+        <div className="bg-white rounded-2xl border border-[#d6e2f0] p-4 flex items-center gap-3 shadow-premium-sm">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center flex-shrink-0 border border-emerald-200">
+            <UserCheck size={20} />
+          </div>
+          <div>
+            <p className="text-xl font-heading font-black text-emerald-950">{presentCount}</p>
+            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider font-heading">Currently In</p>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-[#d6e2f0] p-4 flex items-center gap-3 shadow-premium-sm">
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0 border border-indigo-200">
+            <CheckCircle2 size={20} />
+          </div>
+          <div>
+            <p className="text-xl font-heading font-black text-[#172033]">{completedCount}</p>
+            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider font-heading">Completed Day</p>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-[#d6e2f0] p-4 flex items-center gap-3 shadow-premium-sm">
+          <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center flex-shrink-0 border border-rose-200">
+            <UserX size={20} />
+          </div>
+          <div>
+            <p className="text-xl font-heading font-black text-rose-950">{absentCount}</p>
+            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider font-heading">Not Checked In</p>
+          </div>
         </div>
       </div>
 
-      {/* Search and Filters */}
-      <div className="flex flex-wrap gap-3 items-center">
-        <div className="relative flex-1 min-w-[250px]">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-          <input
-            type="text"
-            placeholder="Search by employee name or matricule"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-          />
-          {searchTerm && (
-            <button onClick={() => setSearchTerm('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-              <X size={16} />
-            </button>
-          )}
-        </div>
-        <div className="flex items-center gap-2 bg-white rounded-xl border border-slate-200 px-3">
-          <Filter className="text-slate-400" size={16} />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="py-2.5 bg-transparent focus:outline-none text-sm font-medium text-slate-700"
-          >
-            <option value="">All Statuses</option>
-            <option value="not checked">Not Checked In</option>
-            <option value="checked in">Checked In</option>
-            <option value="checked out">Checked Out</option>
-          </select>
+      {/* Filter and Search Bar */}
+      <div className="bg-white rounded-2xl border border-[#d6e2f0] p-3.5 shadow-premium-sm">
+        <div className="flex flex-wrap gap-3 items-center justify-between">
+          <div className="relative flex-1 min-w-[240px] max-w-md">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <input
+              type="text"
+              placeholder="Search by employee name or matricule…"
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setPage(1);
+              }}
+              className="w-full pl-10 pr-8 py-2 bg-[#f1f5ff] border border-[#d6e2f0] rounded-xl text-xs font-semibold text-[#172033] placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-[#2563eb] focus:bg-white transition-all"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[#172033] cursor-pointer"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1 bg-[#f1f5ff] rounded-xl p-1 border border-[#d6e2f0]">
+              {[
+                { id: '', label: 'All' },
+                { id: 'Present', label: 'Present' },
+                { id: 'Completed', label: 'Completed' },
+                { id: 'Absent', label: 'Absent' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => {
+                    setStatusFilter(tab.id);
+                    setPage(1);
+                  }}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    statusFilter === tab.id
+                      ? 'bg-gradient-to-r from-[#2563eb] to-[#3b82f6] text-white shadow-electric-glow'
+                      : 'text-[#172033] hover:text-[#2563eb]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={RefreshCw}
+              onClick={fetchData}
+              title="Refresh logs"
+            >
+              Refresh
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -197,93 +216,111 @@ const PresenceTab = () => {
       {loading ? (
         <SkeletonTable rows={6} columns={5} />
       ) : filteredData.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm">
-          <EmptyState 
-            title="No employees found"
-            description="Try adjusting your search or filters"
-            icon={Users}
+        <div className="bg-white rounded-2xl border border-[#d6e2f0] shadow-premium-sm">
+          <EmptyState
+            title="No attendance records found"
+            description="No employees matched your current filters or today's logs are empty."
+            icon={Clock}
           />
         </div>
       ) : (
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-2xl border border-[#dde5ec] shadow-premium-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="bg-slate-50/50 border-b border-slate-200">
-                  <th className="py-4 px-6 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Employee</th>
-                  <th className="py-4 px-6 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Status</th>
-                  <th className="py-4 px-6 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Check In</th>
-                  <th className="py-4 px-6 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Check Out</th>
-                  <th className="py-4 px-6 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider">Action</th>
+            <table className="min-w-full divide-y divide-[#e7f0fa] text-sm">
+              <thead className="bg-[#f1f5f8] text-[#2563eb] border-b border-[#dde5ec]">
+                <tr>
+                  <th className="px-6 py-3.5 text-left text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#2563eb]">
+                    Employee
+                  </th>
+                  <th className="px-6 py-3.5 text-left text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#2563eb]">
+                    Check In
+                  </th>
+                  <th className="px-6 py-3.5 text-left text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#2563eb]">
+                    Check Out
+                  </th>
+                  <th className="px-6 py-3.5 text-left text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#2563eb]">
+                    Status
+                  </th>
+                  <th className="px-6 py-3.5 text-right text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#2563eb]">
+                    Actions
+                  </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
+              <tbody className="divide-y divide-[#e7f0fa] bg-white">
                 {paginatedData.map((record) => {
-                  const statusInfo = getStatusDisplay(record);
+                  const hasCheckedIn = !!record.check_in;
+                  const hasCheckedOut = !!record.check_out;
+
                   return (
-                    <tr key={record.employee_id || record.matricule} className="group hover:bg-blue-50/20 transition-colors">
-                      <td className="px-6 py-4">
+                    <tr key={record.id} className="hover:bg-[#e7f0fa]/60 transition-colors">
+                      <td className="px-6 py-3.5 whitespace-nowrap">
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm">
-                            {getInitials(record.first_name, record.last_name)}
+                          <div className="w-8.5 h-8.5 rounded-xl bg-gradient-to-tr from-[#2563eb] to-[#38bdf8] text-white font-bold text-xs flex items-center justify-center flex-shrink-0 shadow-2xs border border-white/20">
+                            {(record.first_name || 'U').charAt(0)}
+                            {(record.last_name || '').charAt(0)}
                           </div>
                           <div>
-                            <p className="font-semibold text-slate-900 text-sm">
+                            <p className="font-bold text-[#172033] text-xs sm:text-sm">
                               {record.first_name} {record.last_name}
                             </p>
-                            <p className="text-xs text-slate-500">{record.matricule}</p>
+                            <p className="text-[11px] text-slate-400 font-mono">{record.matricule}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${statusInfo.bg} ${statusInfo.color}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${statusInfo.dotColor} ${!record.check_out && record.check_in ? 'animate-pulse' : ''}`} />
-                          {statusInfo.label}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        {record.check_in ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-lg font-mono text-sm font-medium">
-                            <LogIn size={12} />
+
+                      <td className="px-6 py-3.5 whitespace-nowrap text-xs font-mono font-bold text-slate-700">
+                        {hasCheckedIn ? (
+                          <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                             {formatTime(record.check_in)}
                           </span>
                         ) : (
-                          <span className="text-slate-400 text-sm">—</span>
+                          <span className="text-slate-400">—</span>
                         )}
                       </td>
-                      <td className="px-6 py-4">
-                        {record.check_out ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-700 rounded-lg font-mono text-sm font-medium">
-                            <LogOut size={12} />
+
+                      <td className="px-6 py-3.5 whitespace-nowrap text-xs font-mono font-bold text-slate-700">
+                        {hasCheckedOut ? (
+                          <span className="text-[#2563eb] bg-[#e7f0fa] px-2 py-0.5 rounded border border-[#dde5ec]">
                             {formatTime(record.check_out)}
                           </span>
                         ) : (
-                          <span className="text-slate-400 text-sm">—</span>
+                          <span className="text-slate-400">—</span>
                         )}
                       </td>
-                      <td className="px-6 py-4 text-right">
-                        {!record.check_in ? (
-                          <button
-                            onClick={() => handleCheckIn(record.employee_id)}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold rounded-xl transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5"
-                          >
-                            <LogIn size={14} />
-                            <span className="hidden sm:inline">Check In</span>
-                          </button>
-                        ) : !record.check_out ? (
-                          <button
-                            onClick={() => handleCheckOut(record.employee_id)}
-                            className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5"
-                          >
-                            <LogOut size={14} />
-                            <span className="hidden sm:inline">Check Out</span>
-                          </button>
+
+                      <td className="px-6 py-3.5 whitespace-nowrap">
+                        {hasCheckedIn && hasCheckedOut ? (
+                          <StatusBadge status="completed" type="dot" />
+                        ) : hasCheckedIn ? (
+                          <StatusBadge status="present" type="dot" />
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 text-slate-500 text-xs font-bold rounded-xl cursor-default">
-                            <CheckCircle2 size={14} />
-                            <span className="hidden sm:inline">Completed</span>
-                          </span>
+                          <StatusBadge status="absent" type="dot" />
                         )}
+                      </td>
+
+                      <td className="px-6 py-3.5 whitespace-nowrap text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {!hasCheckedIn && (
+                            <Button
+                              variant="softBlue"
+                              size="xs"
+                              icon={LogIn}
+                              onClick={() => handleCheckIn(record.id)}
+                            >
+                              Check In
+                            </Button>
+                          )}
+                          {hasCheckedIn && !hasCheckedOut && (
+                            <Button
+                              variant="secondary"
+                              size="xs"
+                              icon={LogOut}
+                              onClick={() => handleCheckOut(record.id)}
+                            >
+                              Check Out
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -291,14 +328,17 @@ const PresenceTab = () => {
               </tbody>
             </table>
           </div>
-          {!loading && filteredData.length > 0 && (
-            <Pagination 
-              page={page} 
-              limit={limit} 
-              total={filteredData.length} 
-              totalPages={Math.ceil(filteredData.length / limit)} 
-              onPageChange={(newPage) => setPage(newPage)} 
-            />
+
+          {totalPages > 1 && (
+            <div className="p-4 border-t border-[#d6e2f0]">
+              <Pagination
+                page={page}
+                limit={limit}
+                total={filteredData.length}
+                totalPages={totalPages}
+                onPageChange={(p) => setPage(p)}
+              />
+            </div>
           )}
         </div>
       )}

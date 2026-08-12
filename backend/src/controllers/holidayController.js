@@ -2,11 +2,12 @@ const Holiday = require("../models/Holiday");
 
 const getHolidays = async (req, res) => {
   try {
-    const { page, limit, search } = req.query;
+    const { page, limit, search, year } = req.query;
     const result = await Holiday.getAll({
         page: page ? parseInt(page, 10) : 1,
-        limit: limit ? parseInt(limit, 10) : 10,
-        search: search || ''
+        limit: limit ? parseInt(limit, 10) : (page ? 10 : 100),
+        search: search || '',
+        year: year ? parseInt(year, 10) : undefined
     });
     res.json({ success: true, ...result });
   } catch (error) {
@@ -32,9 +33,8 @@ const getHolidayById = async (req, res) => {
 };
 
 const createHoliday = async (req, res) => {
-  const db = require("../config/database");
   try {
-    const { name, startDate, endDate, holiday_date, date, type, recurring, description, color } = req.body;
+    const { name, startDate, start_date, endDate, end_date, holiday_date, date, type, recurring, description, color } = req.body;
 
     if (!name) {
       return res.status(400).json({
@@ -43,20 +43,14 @@ const createHoliday = async (req, res) => {
       });
     }
 
-    let startStr = startDate;
-    let endStr = endDate;
+    let startStr = startDate || start_date || holiday_date || date;
+    let endStr = endDate || end_date || startStr;
 
-    // Fallback for single date formats
-    if (!startStr || !endStr) {
-      const singleDate = holiday_date || date;
-      if (!singleDate) {
-        return res.status(400).json({
-          success: false,
-          message: "Holiday date is required"
-        });
-      }
-      startStr = singleDate;
-      endStr = singleDate;
+    if (!startStr) {
+      return res.status(400).json({
+        success: false,
+        message: "Start date is required"
+      });
     }
 
     const start = new Date(startStr);
@@ -72,65 +66,27 @@ const createHoliday = async (req, res) => {
     if (start > end) {
       return res.status(400).json({
         success: false,
-        message: "Start date cannot be after end date."
+        message: "End Date cannot be earlier than Start Date."
       });
     }
 
-    // Generate dates range array
-    const dates = [];
-    const current = new Date(start);
-    while (current <= end) {
-      const y = current.getFullYear();
-      const m = String(current.getMonth() + 1).padStart(2, '0');
-      const d = String(current.getDate()).padStart(2, '0');
-      dates.push(`${y}-${m}-${d}`);
-      current.setDate(current.getDate() + 1);
-    }
-
-    // Insert all dates in a single database transaction
-    await db.query("BEGIN");
-
-    // Check for duplicates in DB first
-    const placeholders = dates.map((_, i) => `$${i + 1}`).join(', ');
-    const checkRes = await db.query(
-      `SELECT holiday_date FROM holidays WHERE holiday_date IN (${placeholders})`,
-      dates
-    );
-
-    if (checkRes.rows.length > 0) {
-      await db.query("ROLLBACK");
-      const rawDate = checkRes.rows[0].holiday_date;
-      const existingDate = (rawDate instanceof Date)
-        ? rawDate.toISOString().split('T')[0]
-        : String(rawDate).split('T')[0];
-      return res.status(400).json({
-        success: false,
-        message: `A holiday already exists on date: ${existingDate}`
-      });
-    }
-
-    const insertedHolidays = [];
-
-    for (const dStr of dates) {
-      const res = await db.query(
-        "INSERT INTO holidays (holiday_date, name, type, recurring, description, color) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-        [dStr, name, type || 'National', recurring || false, description || null, color || null]
-      );
-      insertedHolidays.push(res.rows[0]);
-    }
-    await db.query("COMMIT");
+    const created = await Holiday.create({
+      holiday_date: startStr,
+      end_date: endStr,
+      name,
+      type,
+      recurring,
+      description,
+      color
+    });
 
     res.status(201).json({
       success: true,
-      message: `${insertedHolidays.length} holiday days created successfully.`,
-      data: insertedHolidays
+      message: "Holiday created successfully.",
+      data: created
     });
   } catch (error) {
-    await db.query("ROLLBACK");
     console.error("Error creating holiday:", error);
-    if (error.code === '23505') {
-      return res.status(400).json({ success: false, message: "A holiday already exists on this date" });
-    }
     res.status(500).json({ success: false, message: "Failed to create holiday" });
   }
 };
@@ -138,16 +94,40 @@ const createHoliday = async (req, res) => {
 const updateHoliday = async (req, res) => {
   try {
     const { id } = req.params;
-    const { holiday_date, name } = req.body;
+    const { name, startDate, start_date, endDate, end_date, holiday_date, date } = req.body;
 
-    if (!holiday_date || !name) {
+    let startStr = startDate || start_date || holiday_date || date;
+    let endStr = endDate || end_date || startStr;
+
+    if (!startStr || !name) {
       return res.status(400).json({
         success: false,
         message: "Holiday date and name are required"
       });
     }
 
-    const holiday = await Holiday.update(id, req.body);
+    const start = new Date(startStr);
+    const end = new Date(endStr);
+
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid start date or end date format"
+      });
+    }
+
+    if (start > end) {
+      return res.status(400).json({
+        success: false,
+        message: "End Date cannot be earlier than Start Date."
+      });
+    }
+
+    const holiday = await Holiday.update(id, {
+      ...req.body,
+      holiday_date: startStr,
+      end_date: endStr
+    });
 
     if (!holiday) {
       return res.status(404).json({ success: false, message: "Holiday not found" });
@@ -156,9 +136,6 @@ const updateHoliday = async (req, res) => {
     res.json({ success: true, data: holiday });
   } catch (error) {
     console.error("Error updating holiday:", error);
-    if (error.code === '23505') {
-      return res.status(400).json({ success: false, message: "A holiday already exists on this date" });
-    }
     res.status(500).json({ success: false, message: "Failed to update holiday" });
   }
 };
