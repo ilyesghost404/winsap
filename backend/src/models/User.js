@@ -208,7 +208,7 @@ class User {
   static async activateAccount(userId, passwordHash) {
     await db.query(`
       UPDATE users 
-      SET password_hash = $1, account_status = 'Active', is_active = TRUE, is_verified = TRUE, activation_token = NULL, activation_token_expiry = NULL, activated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      SET password_hash = $1, is_active = TRUE, is_verified = TRUE, updated_at = CURRENT_TIMESTAMP
       WHERE id = $2
     `, [passwordHash, userId]);
   }
