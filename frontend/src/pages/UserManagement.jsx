@@ -11,7 +11,7 @@ import EmptyState from '../components/EmptyState';
 import Pagination from '../components/Pagination';
 import StatusBadge from '../components/StatusBadge';
 import { getUsers, createUser, updateUser, deleteUser, resendActivationEmail, toggleUserStatus } from '../services/userService';
-import { getEmployees, getUnlinkedEmployees } from '../services/employeeService';
+import { getEmployees, getUnlinkedEmployees, getEmployeeById } from '../services/employeeService';
 
 const ROLE_COLORS = {
   admin: 'bg-violet-50 text-violet-700 border-violet-200/80',
@@ -109,7 +109,7 @@ const UserManagement = () => {
     setIsModalOpen(true);
   };
 
-  const handleEdit = (user) => {
+  const handleEdit = async (user) => {
     setEditingUser(user);
     setFormData({
       username: user.username,
@@ -117,6 +117,33 @@ const UserManagement = () => {
       role: user.role,
       employee_id: user.employee_id || '',
     });
+
+    // Refresh unlinked employees and include the currently linked employee
+    try {
+      const unlinked = await getUnlinkedEmployees();
+      let list = unlinked || [];
+
+      // If user has a linked employee, make sure it's in the dropdown
+      if (user.employee_id) {
+        const alreadyIncluded = list.some((e) => e.id === user.employee_id);
+        if (!alreadyIncluded) {
+          // Try the local employees list first, then fetch from API
+          let linked = employees.find((e) => e.id === user.employee_id);
+          if (!linked) {
+            try {
+              linked = await getEmployeeById(user.employee_id);
+            } catch (_) { /* ignore fetch error */ }
+          }
+          if (linked) {
+            list = [linked, ...list];
+          }
+        }
+      }
+      setUnlinkedEmployees(list);
+    } catch (err) {
+      console.error('Failed to load unlinked employees', err);
+    }
+
     setIsModalOpen(true);
   };
 
