@@ -22,16 +22,25 @@ const {
 } = require("../controllers/attendanceController");
 const { requireAuth, authorizeRoles } = require("../middleware/authMiddleware");
 
-// Helper middleware to check if user can access/modify their own employee data
+// Helper middleware to check if user can view employee attendance
 const canAccessOrModifySelf = (req, res, next) => {
   const { employeeId } = req.params;
-  if (req.user.role === "manager") {
+  if (req.user.role === "manager" || req.user.role === "admin") {
     return next();
   }
   if (req.user.role === "employee" && req.user.employee_id === parseInt(employeeId, 10)) {
     return next();
   }
   return res.status(403).json({ success: false, message: "Access forbidden: you can only access or modify your own records" });
+};
+
+// Self-only middleware for check-in / check-out actions (managers have read-only access)
+const selfOnlyCheckIn = (req, res, next) => {
+  const { employeeId } = req.params;
+  if (req.user.employee_id === parseInt(employeeId, 10)) {
+    return next();
+  }
+  return res.status(403).json({ success: false, message: "Access forbidden: managers have read-only attendance access and cannot check employees in or out" });
 };
 
 // Manager only helper
@@ -66,9 +75,9 @@ router.post("/check-out", requireAuth, checkOutWithAI);
 router.post("/check-in-face", requireAuth, checkInWithFaceOnly);
 router.post("/check-out-face", requireAuth, checkOutWithFaceOnly);
 
-// Self-access or Manager/Admin endpoints
-router.post("/check-in/:employeeId", requireAuth, canAccessOrModifySelf, checkIn);
-router.put("/check-out/:employeeId", requireAuth, canAccessOrModifySelf, checkOut);
+// Self-access check-in / check-out (read-only for managers)
+router.post("/check-in/:employeeId", requireAuth, selfOnlyCheckIn, checkIn);
+router.put("/check-out/:employeeId", requireAuth, selfOnlyCheckIn, checkOut);
 router.get("/:employeeId/:year/:month", requireAuth, canAccessOrModifySelf, getEmployeeAttendanceByMonth);
 
 module.exports = router;

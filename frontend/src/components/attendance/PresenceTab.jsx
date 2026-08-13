@@ -241,9 +241,6 @@ const PresenceTab = () => {
                   <th className="px-6 py-3.5 text-left text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#2563eb]">
                     Status
                   </th>
-                  <th className="px-6 py-3.5 text-right text-[11px] font-heading font-extrabold uppercase tracking-wider text-[#2563eb]">
-                    Actions
-                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e7f0fa] bg-white">
@@ -296,31 +293,6 @@ const PresenceTab = () => {
                         ) : (
                           <StatusBadge status="absent" type="dot" />
                         )}
-                      </td>
-
-                      <td className="px-6 py-3.5 whitespace-nowrap text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          {!hasCheckedIn && (
-                            <Button
-                              variant="softBlue"
-                              size="xs"
-                              icon={LogIn}
-                              onClick={() => handleCheckIn(record.id)}
-                            >
-                              Check In
-                            </Button>
-                          )}
-                          {hasCheckedIn && !hasCheckedOut && (
-                            <Button
-                              variant="secondary"
-                              size="xs"
-                              icon={LogOut}
-                              onClick={() => handleCheckOut(record.id)}
-                            >
-                              Check Out
-                            </Button>
-                          )}
-                        </div>
                       </td>
                     </tr>
                   );

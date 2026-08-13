@@ -669,8 +669,8 @@ const Reports = () => {
                         cellBg = 'bg-[#f4f7fc]';
                         cellText = 'text-slate-300';
                       } else if (dayStatus.status === 'holiday') {
-                        cellBg = 'bg-blue-50';
-                        cellText = 'text-[#2563eb] font-bold';
+                        cellBg = 'bg-amber-50';
+                        cellText = 'text-amber-700 font-black';
                       } else if (dayStatus.status === 'absent') {
                         cellBg = 'bg-rose-50';
                         cellText = 'text-rose-700 font-black';
@@ -709,7 +709,7 @@ const Reports = () => {
           <span className="flex items-center gap-1.5"><span className="px-1.5 py-0.2 bg-blue-50 text-[#2563eb] rounded border border-[#bfdbfe] font-black">V</span> Vacation</span>
           <span className="flex items-center gap-1.5"><span className="px-1.5 py-0.2 bg-rose-50 text-rose-600 rounded border border-rose-200 font-black">S</span> Sick</span>
           <span className="flex items-center gap-1.5"><span className="px-1.5 py-0.2 bg-indigo-50 text-indigo-600 rounded border border-indigo-200 font-black">T</span> Telework</span>
-          <span className="flex items-center gap-1.5"><span className="px-1.5 py-0.2 bg-slate-100 text-slate-700 rounded border border-slate-200 font-black">H</span> Holiday</span>
+          <span className="flex items-center gap-1.5"><span className="px-1.5 py-0.2 bg-amber-50 text-amber-700 rounded border border-amber-200 font-black">H</span> Holiday</span>
         </div>
       </Card>
 

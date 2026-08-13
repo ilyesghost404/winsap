@@ -1,6 +1,6 @@
 const ExcelJS = require("exceljs");
 const db = require("../config/database");
-const { getHolidays, countWorkingDays, calculateAttendance, toDateString } = require("./attendanceService");
+const { getHolidays, countWorkingDays, calculateAttendance, toDateString, parseLocalDate } = require("./attendanceService");
 
 async function generateMonthlyReport(year, month) {
     const employeesResult = await db.query("SELECT e.*, d.name as department FROM employees e LEFT JOIN departments d ON e.department_id = d.id ORDER BY e.matricule");
@@ -211,16 +211,16 @@ async function generateDetailedAttendanceReport(filters) {
     const employees = employeesResult.rows;
 
     const holidaysResult = await db.query(
-        "SELECT holiday_date, COALESCE(end_date, holiday_date) AS end_date, name FROM holidays WHERE holiday_date <= $2 AND COALESCE(end_date, holiday_date) >= $1",
-        [endDateStr, startDateStr]
+        "SELECT holiday_date::text, COALESCE(end_date, holiday_date)::text AS end_date, name FROM holidays WHERE holiday_date <= $2 AND COALESCE(end_date, holiday_date) >= $1",
+        [startDateStr, endDateStr]
     );
     const holidayMap = {};
     holidaysResult.rows.forEach(h => {
         const hStartStr = toDateString(h.holiday_date);
         const hEndStr = toDateString(h.end_date);
-        const curStart = new Date(Math.max(new Date(hStartStr).getTime(), new Date(startDateStr).getTime()));
-        const curEnd = new Date(Math.min(new Date(hEndStr).getTime(), new Date(endDateStr).getTime()));
-        for (let d = new Date(curStart); d <= curEnd; d.setDate(d.getDate() + 1)) {
+        const start = parseLocalDate(hStartStr < startDateStr ? startDateStr : hStartStr);
+        const end = parseLocalDate(hEndStr > endDateStr ? endDateStr : hEndStr);
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
             const dateStr = toDateString(d);
             holidayMap[dateStr] = h.name;
         }

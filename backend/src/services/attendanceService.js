@@ -195,6 +195,7 @@ async function checkAndTriggerAutomaticTeleworkCheckIn(employeeId) {
 }
 
 module.exports = {
+    parseLocalDate,
     toDateString,
     countWorkingDays,
     getHolidays,
