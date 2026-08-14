@@ -2,37 +2,63 @@ const nodemailer = require("nodemailer");
 
 let transporter;
 
+const parseSmtpPassword = (rawPass) => {
+  if (!rawPass) return "";
+  const trimmed = rawPass.trim();
+  if (trimmed.startsWith("eyJ")) {
+    try {
+      const decoded = Buffer.from(trimmed, "base64").toString("utf8");
+      const parsed = JSON.parse(decoded);
+      if (parsed.api_key) return parsed.api_key;
+      if (parsed.password) return parsed.password;
+      if (parsed.smtp_password) return parsed.smtp_password;
+    } catch (e) {
+      // Ignored if not base64 JSON
+    }
+  }
+  return trimmed;
+};
+
 const initTransporter = () => {
-  if (process.env.EMAIL_HOST && process.env.EMAIL_USER) {
-    const port = parseInt(process.env.EMAIL_PORT || "465", 10);
+  console.log('SMTP host:', process.env.SMTP_HOST);
+  console.log('SMTP port:', process.env.SMTP_PORT);
+  console.log('SMTP user:', process.env.SMTP_USER);
+  console.log('SMTP password configured:', Boolean(process.env.SMTP_PASSWORD));
+
+  const host = process.env.SMTP_HOST || "smtp-relay.brevo.com";
+  const port = parseInt(process.env.SMTP_PORT || "587", 10);
+  const user = process.env.SMTP_USER;
+  const pass = parseSmtpPassword(process.env.SMTP_PASSWORD);
+
+  if (host && user && pass) {
     const isSecure = port === 465;
 
     transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST,
+      host: host,
       port: port,
-      secure: isSecure, // true for port 465 (direct SSL/TLS)
+      secure: isSecure, // false for port 587 (STARTTLS)
       family: 4,        // Force IPv4 to prevent 2-3 minute dual-stack IPv6 DNS connection timeouts
       pool: true,       // Maintain persistent connection pool for instant email delivery
       maxConnections: 5,
       maxMessages: 100,
       connectionTimeout: 10000, // 10s connection timeout
-      greetingTimeout: 5000,
-      socketTimeout: 15000,
+      greetingTimeout: 5000,    // 5s greeting timeout
+      socketTimeout: 15000,     // 15s socket timeout
       auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASSWORD,
+        user: user,
+        pass: pass,
       },
     });
 
     transporter.verify((err) => {
       if (err) {
-        console.error("⚠️ SMTP Transporter Warning:", err.message);
+        console.error("⚠️ Brevo SMTP Transporter Warning:", err.message);
       } else {
-        console.log(`✉️ SMTP Transporter initialized on ${process.env.EMAIL_HOST}:${port} (IPv4 Pool Active)`);
+        console.log(`✉️ Brevo SMTP Transporter initialized on ${host}:${port} (${user})`);
       }
     });
   } else {
-    console.error("Gmail SMTP credentials are not configured in .env");
+    console.error("Brevo SMTP credentials (SMTP_HOST, SMTP_USER, SMTP_PASSWORD) are not configured in .env");
   }
 };
 
@@ -40,29 +66,36 @@ initTransporter();
 
 const sendEmail = async (to, subject, htmlContent) => {
   const startTime = Date.now();
-  console.log(`[${new Date().toISOString()}] 📤 [Email Step 3] Email sending started to recipient: ${to}`);
+  console.log(`[${new Date().toISOString()}] 📤 [Brevo Email] Sending email to: ${to}`);
 
   if (!transporter) {
-    console.error(`[${new Date().toISOString()}] ❌ Email service is not configured. Email to ${to} cancelled.`);
-    return false;
+    initTransporter();
   }
+
+  if (!transporter) {
+    const errorMsg = "Brevo SMTP service is not configured. Please check backend .env settings.";
+    console.error(`[${new Date().toISOString()}] ❌ ${errorMsg}`);
+    throw new Error(errorMsg);
+  }
+
+  const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER || 'hmidilyes4442@gmail.com';
+  const fromName = process.env.SMTP_FROM_NAME || 'WinSAP';
   
   try {
     const info = await transporter.sendMail({
-      from: `"${process.env.EMAIL_FROM_NAME || 'WinSAP'}" <${process.env.EMAIL_FROM || 'no-reply@winsap.com'}>`,
+      from: `"${fromName}" <${fromEmail}>`,
       to,
       subject,
       html: htmlContent,
     });
     
     const duration = Date.now() - startTime;
-    console.log(`[${new Date().toISOString()}] 📥 [Email Step 4] Email provider accepted message. Message ID: ${info.messageId}`);
-    console.log(`[${new Date().toISOString()}] ✅ [Email Step 5] Email sending completed to ${to} in ${duration} ms.`);
-    return true;
+    console.log(`[${new Date().toISOString()}] 📥 Brevo accepted message. ID: ${info.messageId} (${duration}ms)`);
+    return info;
   } catch (error) {
     const duration = Date.now() - startTime;
-    console.error(`[${new Date().toISOString()}] ❌ Error sending email to ${to} after ${duration} ms:`, error.message);
-    return false;
+    console.error(`[${new Date().toISOString()}] ❌ Error sending email to ${to} via Brevo after ${duration}ms:`, error.message);
+    throw error;
   }
 };
 

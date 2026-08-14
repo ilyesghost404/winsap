@@ -19,6 +19,7 @@ const securityRoutes = require("./routes/securityRoutes");
 const departmentRoutes = require("./routes/departmentRoutes");
 const leaveBalanceRoutes = require("./routes/leaveBalanceRoutes");
 const craRoutes = require("./routes/craRoutes");
+const notificationRoutes = require("./routes/notificationRoutes");
 
 const app = express();
 
@@ -193,6 +194,9 @@ app.use("/api/settings", settingsRoutes);
 
 // Leave Balances routes
 app.use("/api/leave-balances", leaveBalanceRoutes);
+
+// Notification routes
+app.use("/api/notifications", notificationRoutes);
 
 // Serve uploaded files (e.g. profile pictures)
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));

@@ -5,7 +5,7 @@ import Button from './Button';
 import toast from 'react-hot-toast';
 import api from '../services/api';
 
-const FaceRegistration = ({ employeeId, token, verifyToken, onSuccess }) => {
+const FaceRegistration = ({ employeeId, token, verifyToken, useMeEndpoint = false, mode = 'register', onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -39,7 +39,13 @@ const FaceRegistration = ({ employeeId, token, verifyToken, onSuccess }) => {
 
     try {
       let res;
-      if (verifyToken) {
+      if (useMeEndpoint) {
+        if (mode === 'update') {
+          res = await api.put('/users/me/face-id', { image: base64Image, verifyToken });
+        } else {
+          res = await api.post('/users/me/face-id', { image: base64Image });
+        }
+      } else if (verifyToken) {
         res = await api.put('/security/update-face', {
           verifyToken,
           image: base64Image

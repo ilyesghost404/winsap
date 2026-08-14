@@ -54,5 +54,6 @@ const authorizeRoles = (...roles) => {
 
 module.exports = {
   requireAuth,
+  authenticateToken: requireAuth,
   authorizeRoles
 };

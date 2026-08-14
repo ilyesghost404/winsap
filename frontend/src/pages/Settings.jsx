@@ -2,22 +2,25 @@ import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import {
   User, Bell, Palette, Shield, Save, Eye, EyeOff,
-  Mail, CalendarCheck, CalendarRange, Lock, CheckCircle2, Zap
+  Mail, CalendarCheck, CalendarRange, Lock, CheckCircle2, Zap,
+  Camera, Trash2, AlertTriangle, Loader2
 } from 'lucide-react';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import PasswordInput from '../components/PasswordInput';
 import LoadingSpinner from '../components/LoadingSpinner';
+import FaceRegistration from '../components/FaceRegistration';
+import FaceVerification from '../components/FaceVerification';
 import { useAuth } from '../context/AuthContext';
 import {
-  getProfile,
-  updateProfile,
   getNotifications,
   updateNotifications,
-  getAppearance,
-  updateAppearance,
   changePassword,
 } from '../services/settingsService';
+import {
+  getMyFaceIdStatus,
+  deleteMyFaceId
+} from '../services/userService';
 
 const Toggle = ({ checked, onChange, disabled }) => (
   <button
@@ -62,6 +65,14 @@ const Settings = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
+  // Face ID state
+  const [faceStatusLoading, setFaceStatusLoading] = useState(true);
+  const [faceStatus, setFaceStatus] = useState({ configured: false, status: 'not_configured', registeredAt: null });
+  const [faceAction, setFaceAction] = useState(null); // null | 'setup' | 'update' | 'remove'
+  const [faceStep, setFaceStep] = useState(1); // 1: Verify current face, 2: Register new / Confirm removal
+  const [verifyToken, setVerifyToken] = useState(null);
+  const [removingFace, setRemovingFace] = useState(false);
+
   // Notifications
   const [notifSettings, setNotifSettings] = useState({
     email_leave_approval: true,
@@ -77,6 +88,20 @@ const Settings = () => {
     confirmPassword: '',
   });
 
+  const fetchFaceStatus = useCallback(async () => {
+    try {
+      setFaceStatusLoading(true);
+      const res = await getMyFaceIdStatus();
+      if (res && res.success) {
+        setFaceStatus(res);
+      }
+    } catch (err) {
+      console.warn('Failed to load Face ID status:', err);
+    } finally {
+      setFaceStatusLoading(false);
+    }
+  }, []);
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
@@ -85,13 +110,14 @@ const Settings = () => {
       if (notifRes) {
         setNotifSettings((prev) => ({ ...prev, ...notifRes }));
       }
+      await fetchFaceStatus();
     } catch (err) {
       console.error('Error loading settings:', err);
       toast.error('Failed to load settings');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchFaceStatus]);
 
   useEffect(() => {
     loadData();
@@ -136,6 +162,24 @@ const Settings = () => {
     }
   };
 
+  const startSetupFace = () => {
+    setFaceAction('setup');
+    setFaceStep(2);
+    setVerifyToken(null);
+  };
+
+  const startUpdateFace = () => {
+    setFaceAction('update');
+    setFaceStep(1);
+    setVerifyToken(null);
+  };
+
+  const startRemoveFace = () => {
+    setFaceAction('remove');
+    setFaceStep(1);
+    setVerifyToken(null);
+  };
+
   const pwStrength = getPasswordStrength(pwForm.newPassword);
 
   const tabs = [
@@ -165,7 +209,7 @@ const Settings = () => {
               SETTINGS & SECURITY
             </h1>
             <p className="text-blue-100 text-xs sm:text-sm mt-1 max-w-xl">
-              Configure profile information, automated notifications, authentication security, and account preferences.
+              Configure profile information, automated notifications, Face ID biometrics, and security preferences.
             </p>
           </div>
         </div>
@@ -199,9 +243,7 @@ const Settings = () => {
         })}
       </div>
 
-
-
-      {/* Tab 2: Notifications */}
+      {/* Tab 1: Notifications */}
       {activeTab === 'notifications' && (
         <Card headerVariant="light" title="Email Notification Settings" subtitle="Choose system alerts, approval digests, and holiday reminders">
           <div className="space-y-4 divide-y divide-slate-100">
@@ -242,64 +284,262 @@ const Settings = () => {
         </Card>
       )}
 
-      {/* Tab 3: Security */}
+      {/* Tab 2: Security */}
       {activeTab === 'security' && (
-        <Card headerVariant="light" title="Change Password" subtitle="Ensure your account is using a secure, long password">
-          <form onSubmit={handleChangePassword} className="space-y-4 max-w-md">
-            <div>
-              <label className="block text-xs font-heading font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">
-                Current Password
-              </label>
-              <PasswordInput
-                value={pwForm.currentPassword}
-                onChange={(e) => setPwForm({ ...pwForm, currentPassword: e.target.value })}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-heading font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">
-                New Password
-              </label>
-              <PasswordInput
-                value={pwForm.newPassword}
-                onChange={(e) => setPwForm({ ...pwForm, newPassword: e.target.value })}
-                required
-              />
-              {pwForm.newPassword && (
-                <div className="mt-2 space-y-1">
-                  <div className="flex items-center justify-between text-[11px] font-bold">
-                    <span className="text-slate-500">Strength:</span>
-                    <span className={pwStrength.color.replace('bg-', 'text-')}>{pwStrength.label}</span>
+        <div className="space-y-6">
+          {/* Face ID / Biometric Authentication Card */}
+          <Card
+            headerVariant="light"
+            title="Face ID / Biometric Authentication"
+            subtitle="Manage your biometric face profile for passwordless login and instant verification"
+          >
+            {faceStatusLoading ? (
+              <div className="py-6 flex items-center justify-center text-slate-400">
+                <Loader2 className="animate-spin mr-2" size={18} />
+                <span className="text-xs font-semibold">Checking Face ID status…</span>
+              </div>
+            ) : faceStatus.configured ? (
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4.5 rounded-2xl bg-emerald-50/60 border border-emerald-200/80">
+                <div className="flex items-start gap-3.5">
+                  <div className="p-2.5 bg-emerald-100 text-emerald-700 rounded-xl flex-shrink-0 border border-emerald-200 shadow-2xs">
+                    <CheckCircle2 size={22} />
                   </div>
-                  <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full ${pwStrength.color} transition-all duration-300`}
-                      style={{ width: `${(pwStrength.level / 4) * 100}%` }}
-                    />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xs sm:text-sm font-heading font-bold text-slate-900">Face ID Status</h4>
+                      <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide rounded-full bg-emerald-100 text-emerald-700 border border-emerald-300">
+                        Configured
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                      Your Face ID is configured and ready for passwordless login and verification.
+                      {faceStatus.registeredAt && (
+                        <span className="block text-[11px] text-slate-400 mt-0.5 font-mono">
+                          Registered on: {new Date(faceStatus.registeredAt).toLocaleDateString()}
+                        </span>
+                      )}
+                    </p>
                   </div>
                 </div>
-              )}
+
+                <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+                  <Button
+                    variant="secondary"
+                    onClick={startUpdateFace}
+                    className="text-xs py-2 px-3"
+                  >
+                    <Camera size={14} className="mr-1.5 text-[#0064e0]" />
+                    Update Face ID
+                  </Button>
+
+                  <Button
+                    variant="danger"
+                    onClick={startRemoveFace}
+                    className="text-xs py-2 px-3 bg-rose-600 hover:bg-rose-700 text-white"
+                  >
+                    <Trash2 size={14} className="mr-1.5" />
+                    Remove Face ID
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4.5 rounded-2xl bg-slate-50 border border-slate-200">
+                <div className="flex items-start gap-3.5">
+                  <div className="p-2.5 bg-slate-200 text-slate-600 rounded-xl flex-shrink-0 border border-slate-300 shadow-2xs">
+                    <Camera size={22} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xs sm:text-sm font-heading font-bold text-slate-900">Face ID Status</h4>
+                      <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wide rounded-full bg-slate-200 text-slate-700 border border-slate-300">
+                        Not configured
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                      Set up Face ID to use biometric verification for fast, secure login and attendance checks.
+                    </p>
+                  </div>
+                </div>
+
+                <Button
+                  variant="primary"
+                  onClick={startSetupFace}
+                  className="text-xs py-2 px-4 whitespace-nowrap"
+                >
+                  <Camera size={14} className="mr-1.5" />
+                  Set Up Face ID
+                </Button>
+              </div>
+            )}
+          </Card>
+
+          {/* Change Password Card */}
+          <Card headerVariant="light" title="Change Password" subtitle="Ensure your account is using a secure, long password">
+            <form onSubmit={handleChangePassword} className="space-y-4 max-w-md">
+              <div>
+                <label className="block text-xs font-heading font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Current Password
+                </label>
+                <PasswordInput
+                  value={pwForm.currentPassword}
+                  onChange={(e) => setPwForm({ ...pwForm, currentPassword: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-heading font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">
+                  New Password
+                </label>
+                <PasswordInput
+                  value={pwForm.newPassword}
+                  onChange={(e) => setPwForm({ ...pwForm, newPassword: e.target.value })}
+                  required
+                />
+                {pwForm.newPassword && (
+                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center justify-between text-[11px] font-bold">
+                      <span className="text-slate-500">Strength:</span>
+                      <span className={pwStrength.color.replace('bg-', 'text-')}>{pwStrength.label}</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${pwStrength.color} transition-all duration-300`}
+                        style={{ width: `${(pwStrength.level / 4) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-heading font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Confirm New Password
+                </label>
+                <PasswordInput
+                  value={pwForm.confirmPassword}
+                  onChange={(e) => setPwForm({ ...pwForm, confirmPassword: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="pt-3 border-t border-slate-100">
+                <Button type="submit" loading={saving}>
+                  Update Password
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Multi-Step Face ID Management Modal ──────────────────── */}
+      {faceAction && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border border-slate-200 relative animate-scale-in">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+              <h3 className="font-heading font-extrabold text-base text-slate-900 flex items-center gap-2">
+                <Camera size={18} className="text-[#0064e0]" />
+                {faceAction === 'setup' && 'Set Up Face ID'}
+                {faceAction === 'update' && (faceStep === 1 ? 'Update Face ID (Step 1 of 2)' : 'Update Face ID (Step 2 of 2)')}
+                {faceAction === 'remove' && (faceStep === 1 ? 'Remove Face ID (Step 1 of 2)' : 'Remove Face ID (Step 2 of 2)')}
+              </h3>
+              <button
+                onClick={() => setFaceAction(null)}
+                className="text-slate-400 hover:text-slate-600 text-sm font-bold cursor-pointer p-1 rounded-lg hover:bg-slate-100"
+              >
+                ✕
+              </button>
             </div>
 
-            <div>
-              <label className="block text-xs font-heading font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">
-                Confirm New Password
-              </label>
-              <PasswordInput
-                value={pwForm.confirmPassword}
-                onChange={(e) => setPwForm({ ...pwForm, confirmPassword: e.target.value })}
-                required
+            {/* Step 1: Verify Current Face ID (for update and remove) */}
+            {faceStep === 1 && (faceAction === 'update' || faceAction === 'remove') && (
+              <FaceVerification
+                onSuccess={(token) => {
+                  setVerifyToken(token);
+                  setFaceStep(2);
+                }}
+                onCancel={() => setFaceAction(null)}
               />
-            </div>
+            )}
 
-            <div className="pt-3 border-t border-slate-100">
-              <Button type="submit" loading={saving}>
-                Update Password
-              </Button>
-            </div>
-          </form>
-        </Card>
+            {/* Step 2: Register New Face ID for Setup */}
+            {faceStep === 2 && faceAction === 'setup' && (
+              <FaceRegistration
+                useMeEndpoint={true}
+                mode="register"
+                onSuccess={() => {
+                  setFaceAction(null);
+                  toast.success('Face ID set up successfully!');
+                  fetchFaceStatus();
+                }}
+              />
+            )}
+
+            {/* Step 2: Register New Face ID for Update */}
+            {faceStep === 2 && faceAction === 'update' && (
+              <FaceRegistration
+                useMeEndpoint={true}
+                mode="update"
+                verifyToken={verifyToken}
+                onSuccess={() => {
+                  setFaceAction(null);
+                  toast.success('Face ID updated successfully!');
+                  fetchFaceStatus();
+                }}
+              />
+            )}
+
+            {/* Step 2: Confirmation Dialog for Remove */}
+            {faceStep === 2 && faceAction === 'remove' && (
+              <div className="text-center py-3">
+                <div className="w-14 h-14 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-2xs">
+                  <AlertTriangle size={28} />
+                </div>
+                <h3 className="font-heading font-black text-lg text-slate-900 mb-1">
+                  Remove Face ID?
+                </h3>
+                <p className="text-xs text-slate-600 mb-6 leading-relaxed max-w-sm mx-auto">
+                  Biometric verification succeeded. Are you sure you want to remove your Face ID? Removing it will disable Face ID authentication until it is configured again.
+                </p>
+
+                <div className="flex items-center gap-3 max-w-xs mx-auto">
+                  <Button
+                    variant="secondary"
+                    onClick={() => setFaceAction(null)}
+                    disabled={removingFace}
+                    className="flex-1 text-xs py-2.5"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="danger"
+                    loading={removingFace}
+                    onClick={async () => {
+                      try {
+                        setRemovingFace(true);
+                        const res = await deleteMyFaceId(verifyToken);
+                        if (res && res.success) {
+                          toast.success('Face ID profile removed successfully');
+                          setFaceStatus({ configured: false, status: 'not_configured', registeredAt: null });
+                          setFaceAction(null);
+                        }
+                      } catch (err) {
+                        console.error('Failed to remove Face ID:', err);
+                        toast.error(err.response?.data?.message || 'Failed to remove Face ID');
+                      } finally {
+                        setRemovingFace(false);
+                      }
+                    }}
+                    className="flex-1 text-xs py-2.5 bg-rose-600 hover:bg-rose-700 text-white"
+                  >
+                    Yes, Remove
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

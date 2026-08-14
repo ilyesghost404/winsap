@@ -34,3 +34,28 @@ export const toggleUserStatus = async (id, is_active) => {
   const response = await api.patch(`/users/${id}/status`, { is_active });
   return response.data;
 };
+
+export const getMyFaceIdStatus = async () => {
+  const response = await api.get('/users/me/face-id');
+  return response.data;
+};
+
+export const registerMyFaceId = async (image) => {
+  const response = await api.post('/users/me/face-id', { image });
+  return response.data;
+};
+
+export const verifyMyCurrentFace = async (image) => {
+  const response = await api.post('/users/me/face-id/verify-current', { image });
+  return response.data;
+};
+
+export const updateMyFaceId = async (image, verifyToken) => {
+  const response = await api.put('/users/me/face-id', { image, verifyToken });
+  return response.data;
+};
+
+export const deleteMyFaceId = async (verifyToken) => {
+  const response = await api.delete('/users/me/face-id', { data: { verifyToken } });
+  return response.data;
+};

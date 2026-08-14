@@ -1,43 +1,62 @@
 import { useState, useRef, useEffect } from 'react';
 import {
   Bell, Menu, Search, User, LogOut, Settings, ChevronDown,
-  CheckCircle2, CalendarDays, Check, Trash2
+  CheckCircle2, CalendarDays, Check, Trash2, AlertTriangle, Info, XCircle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
 import WinsapLogo from './WinsapLogo';
+import {
+  getNotifications,
+  markAsRead,
+  markAllAsRead,
+  deleteNotification
+} from '../services/notificationService';
+import { getSocket } from '../services/socket';
+
+function formatRelativeTime(dateString) {
+  if (!dateString) return 'Just now';
+  const date = new Date(dateString);
+  const now = new Date();
+  const seconds = Math.floor((now - date) / 1000);
+  if (seconds < 60) return 'Just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString();
+}
+
+function getNotificationStyle(type) {
+  switch (type) {
+    case 'success':
+    case 'leave_approved':
+      return { Icon: CheckCircle2, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' };
+    case 'error':
+    case 'leave_rejected':
+      return { Icon: XCircle, color: 'text-rose-600 bg-rose-50 border-rose-200' };
+    case 'warning':
+    case 'leave_request':
+      return { Icon: AlertTriangle, color: 'text-amber-600 bg-amber-50 border-amber-200' };
+    default:
+      return { Icon: Info, color: 'text-[#0064e0] bg-[#e7f0fa] border-[#dde5ec]' };
+  }
+}
 
 const Navbar = ({ title = 'Dashboard', onMenuClick }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      title: 'Leave request approved',
-      desc: 'Your recent vacation request was validated.',
-      time: '10m ago',
-      read: false,
-      icon: CheckCircle2,
-      color: 'text-emerald-600 bg-emerald-50 border-emerald-200'
-    },
-    {
-      id: 2,
-      title: 'Holiday reminder',
-      desc: 'Official holiday upcoming this week.',
-      time: '2h ago',
-      read: false,
-      icon: CalendarDays,
-      color: 'text-[#0064e0] bg-[#e7f0fa] border-[#dde5ec]'
-    }
-  ]);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const notifRef = useRef(null);
   const userMenuRef = useRef(null);
   const searchInputRef = useRef(null);
-
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const [imgError, setImgError] = useState(false);
 
   const getRoleBadgeClass = (role) => {
     if (role === 'admin') return 'bg-violet-100 text-violet-700 border-violet-200';
@@ -50,6 +69,52 @@ const Navbar = ({ title = 'Dashboard', onMenuClick }) => {
     if (role === 'manager') return 'Manager';
     return 'Employee';
   };
+
+  // Load initial notifications & subscribe to Socket.IO real-time events
+  useEffect(() => {
+    if (!user) return;
+
+    let isMounted = true;
+
+    const loadNotifications = async () => {
+      try {
+        const res = await getNotifications();
+        if (isMounted && res.success) {
+          setNotifications(res.data || []);
+          setUnreadCount(res.unread_count || 0);
+        }
+      } catch (err) {
+        console.warn("⚠️ Failed to load notifications:", err.message);
+      }
+    };
+
+    loadNotifications();
+
+    const socket = getSocket();
+    if (socket) {
+      const handleNewNotification = (newNotif) => {
+        if (!isMounted) return;
+        setNotifications((prev) => [newNotif, ...prev.filter(n => n.id !== newNotif.id)]);
+        setUnreadCount((prev) => prev + 1);
+      };
+
+      const handleUnreadCount = ({ unread_count }) => {
+        if (!isMounted) return;
+        setUnreadCount(unread_count);
+      };
+
+      socket.on('notification:new', handleNewNotification);
+      socket.on('notification:count', handleUnreadCount);
+
+      return () => {
+        isMounted = false;
+        socket.off('notification:new', handleNewNotification);
+        socket.off('notification:count', handleUnreadCount);
+      };
+    }
+
+    return () => { isMounted = false; };
+  }, [user]);
 
   // Close dropdowns on outside click or Escape key, & Ctrl+K / '/' for search focus
   useEffect(() => {
@@ -67,7 +132,6 @@ const Navbar = ({ title = 'Dashboard', onMenuClick }) => {
         setShowNotifications(false);
         setShowUserMenu(false);
       }
-      // Ctrl+K or Cmd+K or '/' to focus search input (when not typing in another input)
       if (
         (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')) &&
         document.activeElement.tagName !== 'INPUT' &&
@@ -88,12 +152,56 @@ const Navbar = ({ title = 'Dashboard', onMenuClick }) => {
     };
   }, []);
 
-  const handleMarkAllRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  useEffect(() => {
+    setImgError(false);
+  }, [user?.avatar_url]);
+
+  const handleNotificationClick = async (n) => {
+    if (!n.is_read) {
+      try {
+        await markAsRead(n.id);
+        setNotifications((prev) =>
+          prev.map((item) => (item.id === n.id ? { ...item, is_read: true } : item))
+        );
+        setUnreadCount((prev) => Math.max(0, prev - 1));
+      } catch (err) {
+        console.warn("Failed to mark notification read:", err.message);
+      }
+    }
+
+    setShowNotifications(false);
+
+    // Navigate to reference target page if provided
+    if (n.reference_type === 'absence') {
+      navigate('/leave-requests');
+    } else if (n.reference_type === 'cra_task') {
+      navigate('/cra');
+    } else if (n.reference_type === 'user') {
+      navigate('/users');
+    }
   };
 
-  const handleClearNotifications = () => {
-    setNotifications([]);
+  const handleMarkAllRead = async () => {
+    try {
+      await markAllAsRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+      setUnreadCount(0);
+    } catch (err) {
+      console.warn("Failed to mark all notifications read:", err.message);
+    }
+  };
+
+  const handleDeleteOne = async (e, id, isRead) => {
+    e.stopPropagation();
+    try {
+      await deleteNotification(id);
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      if (!isRead) {
+        setUnreadCount((prev) => Math.max(0, prev - 1));
+      }
+    } catch (err) {
+      console.warn("Failed to delete notification:", err.message);
+    }
   };
 
   const initials = (user?.employee_name || user?.username || 'U')
@@ -103,16 +211,10 @@ const Navbar = ({ title = 'Dashboard', onMenuClick }) => {
     .toUpperCase()
     .slice(0, 2);
 
-  const [imgError, setImgError] = useState(false);
-
-  useEffect(() => {
-    setImgError(false);
-  }, [user?.avatar_url]);
-
   return (
     <header className="bg-white/95 backdrop-blur-md border-b border-[#dde5ec] sticky top-0 z-30 transition-all select-none shadow-premium-sm">
       <div className="px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between gap-4">
-        {/* Left Side: Mobile Toggle + Clean Breadcrumb & Page Title */}
+        {/* Left Side: Mobile Toggle + Breadcrumb & Page Title */}
         <div className="flex items-center gap-3.5 min-w-0">
           <button
             onClick={onMenuClick}
@@ -122,7 +224,6 @@ const Navbar = ({ title = 'Dashboard', onMenuClick }) => {
             <Menu size={20} />
           </button>
 
-          {/* Mobile brand badge fallback */}
           <div className="lg:hidden flex-shrink-0">
             <WinsapLogo variant="icon" size="sm" />
           </div>
@@ -179,7 +280,9 @@ const Navbar = ({ title = 'Dashboard', onMenuClick }) => {
             >
               <Bell size={18} />
               {unreadCount > 0 && (
-                <span className="absolute top-2 right-2 w-2 h-2 bg-[#0082fb] rounded-full ring-2 ring-white animate-pulse" />
+                <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 bg-[#0082fb] text-white text-[10px] font-extrabold rounded-full flex items-center justify-center ring-2 ring-white animate-pulse">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
               )}
             </button>
 
@@ -190,7 +293,7 @@ const Navbar = ({ title = 'Dashboard', onMenuClick }) => {
                     Notifications
                     {unreadCount > 0 && (
                       <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-blue-100 text-[#0064e0]">
-                        {unreadCount}
+                        {unreadCount} unread
                       </span>
                     )}
                   </span>
@@ -201,16 +304,7 @@ const Navbar = ({ title = 'Dashboard', onMenuClick }) => {
                         className="text-[10px] text-[#0064e0] font-bold cursor-pointer hover:underline flex items-center gap-1"
                       >
                         <Check size={12} />
-                        Mark read
-                      </button>
-                    )}
-                    {notifications.length > 0 && (
-                      <button
-                        onClick={handleClearNotifications}
-                        className="text-[10px] text-slate-400 font-semibold cursor-pointer hover:text-rose-600 flex items-center gap-0.5"
-                        title="Clear all notifications"
-                      >
-                        <Trash2 size={11} />
+                        Mark all read
                       </button>
                     )}
                   </div>
@@ -225,31 +319,39 @@ const Navbar = ({ title = 'Dashboard', onMenuClick }) => {
                     </div>
                   ) : (
                     notifications.map((n) => {
-                      const Icon = n.icon;
+                      const { Icon, color } = getNotificationStyle(n.type);
+                      const isUnread = !n.is_read;
                       return (
                         <div
                           key={n.id}
-                          onClick={() => {
-                            setNotifications((prev) =>
-                              prev.map((item) => (item.id === n.id ? { ...item, read: true } : item))
-                            );
-                          }}
-                          className={`p-3 rounded-xl transition-colors flex items-start gap-3 cursor-pointer ${
-                            n.read ? 'opacity-70 hover:bg-[#f8fafc]' : 'bg-blue-50/30 hover:bg-[#e7f0fa]'
+                          onClick={() => handleNotificationClick(n)}
+                          className={`p-3 rounded-xl transition-colors flex items-start gap-3 cursor-pointer group ${
+                            isUnread ? 'bg-blue-50/40 hover:bg-[#e7f0fa]' : 'opacity-70 hover:bg-[#f8fafc]'
                           }`}
                         >
-                          <div className={`p-2 rounded-lg ${n.color} flex-shrink-0 mt-0.5 border shadow-2xs`}>
+                          <div className={`p-2 rounded-lg ${color} flex-shrink-0 mt-0.5 border shadow-2xs`}>
                             <Icon size={14} />
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between">
-                              <p className={`text-xs ${n.read ? 'font-medium text-slate-700' : 'font-bold text-[#1c2b33]'}`}>
+                              <p className={`text-xs ${isUnread ? 'font-bold text-[#1c2b33]' : 'font-medium text-slate-700'}`}>
                                 {n.title}
                               </p>
-                              {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-[#0064e0]" />}
+                              <div className="flex items-center gap-1">
+                                {isUnread && <span className="w-2 h-2 rounded-full bg-[#0064e0]" />}
+                                <button
+                                  onClick={(e) => handleDeleteOne(e, n.id, n.is_read)}
+                                  className="text-slate-400 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition-opacity p-0.5"
+                                  title="Delete notification"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
                             </div>
-                            <p className="text-[11px] text-slate-500 mt-0.5 truncate">{n.desc}</p>
-                            <span className="text-[10px] text-slate-400 mt-1 block font-mono">{n.time}</span>
+                            <p className="text-[11px] text-slate-600 mt-0.5 line-clamp-2">{n.message || n.desc}</p>
+                            <span className="text-[10px] text-slate-400 mt-1 block font-mono">
+                              {formatRelativeTime(n.created_at)}
+                            </span>
                           </div>
                         </div>
                       );

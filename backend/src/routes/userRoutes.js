@@ -24,7 +24,12 @@ const {
   verifyActivationToken,
   resendActivationEmail,
   toggleUserStatus,
-  skipFaceIdSetup
+  skipFaceIdSetup,
+  getMyFaceIdStatus,
+  registerMyFaceId,
+  verifyMyCurrentFace,
+  updateMyFaceId,
+  deleteMyFaceId
 } = require("../controllers/userController");
 const { requireAuth, authorizeRoles } = require("../middleware/authMiddleware");
 
@@ -41,6 +46,13 @@ router.post("/verify-email", verifyEmail);
 // Authenticated user profile routes
 router.get("/me", requireAuth, getMe);
 router.post("/change-password", requireAuth, changePassword);
+
+// Authenticated user Face ID self-service routes
+router.get("/me/face-id", requireAuth, getMyFaceIdStatus);
+router.post("/me/face-id", requireAuth, registerMyFaceId);
+router.post("/me/face-id/verify-current", requireAuth, verifyMyCurrentFace);
+router.put("/me/face-id", requireAuth, updateMyFaceId);
+router.delete("/me/face-id", requireAuth, deleteMyFaceId);
 
 // Session management routes
 router.get("/sessions", requireAuth, getActiveSessions);

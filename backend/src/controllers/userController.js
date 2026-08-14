@@ -1,10 +1,12 @@
 const User = require("../models/User");
 const FaceProfile = require("../models/FaceProfile");
+const FaceSecurityLog = require("../models/FaceSecurityLog");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const UAParser = require("ua-parser-js");
 const emailService = require("../utils/emailService");
+const notificationService = require("../services/notificationService");
 const { validateStrictPassword } = require("../utils/passwordUtils");
 const { getFrontendUrl } = require("../utils/frontendUrl");
 
@@ -440,6 +442,15 @@ const createUser = async (req, res) => {
       ipAddress
     );
 
+    // Notify admins
+    notificationService.notifyAdmins(
+      "User Account Created",
+      `Account '${username}' (${email}) created with role '${role}'.`,
+      "info",
+      newUser.id,
+      "user"
+    ).catch(err => console.warn("⚠️ User created notification warning:", err.message));
+
     res.status(201).json({ success: true, data: newUser });
 
   } catch (error) {
@@ -507,6 +518,15 @@ const activateAccount = async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
     await User.activateAccount(tokenCheck.user.id, passwordHash);
 
+    // Notify admins
+    notificationService.notifyAdmins(
+      "Account Activated",
+      `User '${tokenCheck.user.username}' successfully activated their WinSAP account.`,
+      "success",
+      tokenCheck.user.id,
+      "user"
+    ).catch(err => console.warn("⚠️ Account activation notification warning:", err.message));
+
     res.json({ 
       success: true, 
       message: "Account activated successfully.", 
@@ -554,7 +574,7 @@ const resendActivationEmail = async (req, res) => {
     res.json({ success: true, message: "Activation email resent successfully" });
   } catch (error) {
     console.error("ResendActivationEmail error:", error);
-    res.status(500).json({ success: false, message: "Failed to resend activation email" });
+    res.status(500).json({ success: false, message: error.message || "Failed to resend activation email" });
   }
 };
 
@@ -1088,6 +1108,306 @@ const faceLogin = async (req, res) => {
   }
 };
 
+async function getEmployeeIdFromUser(reqUser) {
+  if (reqUser?.employee_id) return reqUser.employee_id;
+  if (reqUser?.id) {
+    const u = await User.getById(reqUser.id);
+    return u?.employee_id || null;
+  }
+  return null;
+}
+
+const getMyFaceIdStatus = async (req, res) => {
+  try {
+    const employeeId = await getEmployeeIdFromUser(req.user);
+    if (!employeeId) {
+      return res.json({ success: true, configured: false, status: 'not_configured' });
+    }
+
+    const profile = await FaceProfile.getByEmployeeId(employeeId);
+    let embedding = profile?.face_embedding;
+    if (typeof embedding === 'string') {
+      try { embedding = JSON.parse(embedding); } catch (e) {}
+    }
+
+    const isRegistered = Boolean(
+      profile &&
+      embedding &&
+      Array.isArray(embedding) &&
+      embedding.length > 0 &&
+      profile.status === 'active'
+    );
+
+    if (!isRegistered) {
+      return res.json({
+        success: true,
+        configured: false,
+        status: 'not_configured'
+      });
+    }
+
+    return res.json({
+      success: true,
+      configured: true,
+      status: profile.status,
+      registeredAt: profile.face_registered_at || profile.registered_at
+    });
+  } catch (error) {
+    console.error("GetMyFaceIdStatus error:", error);
+    res.status(500).json({ success: false, message: "Failed to fetch Face ID status" });
+  }
+};
+
+const registerMyFaceId = async (req, res) => {
+  try {
+    const employeeId = await getEmployeeIdFromUser(req.user);
+    const { image } = req.body;
+
+    if (!employeeId) {
+      return res.status(400).json({ success: false, message: "User is not linked to an employee profile" });
+    }
+
+    if (!image) {
+      return res.status(400).json({ success: false, message: "Face image payload is required" });
+    }
+
+    let aiResponse;
+    try {
+      aiResponse = await fetch("http://localhost:5001/api/ai/embed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image })
+      });
+    } catch (err) {
+      console.error("❌ AI Microservice connection failed:", err);
+      return res.status(502).json({ success: false, message: "AI Microservice is unreachable." });
+    }
+
+    const aiResult = await aiResponse.json();
+    if (!aiResponse.ok || !aiResult.success) {
+      const reason = aiResult.reason || "Failed to generate face signature";
+      await FaceSecurityLog.record(employeeId, 'REGISTER', 'FAILED', null);
+      return res.status(400).json({ success: false, message: reason, reason: aiResult.reason });
+    }
+
+    if (!aiResult.liveness) {
+      await FaceSecurityLog.record(employeeId, 'REGISTER', 'FAILED', null);
+      return res.status(400).json({ success: false, message: "Liveness verification failed (spoofing detected).", reason: "LIVENESS_FAILED" });
+    }
+
+    const existingProfile = await FaceProfile.getByEmployeeId(employeeId);
+    let profile;
+    if (existingProfile) {
+      profile = await FaceProfile.update(employeeId, aiResult.embedding);
+    } else {
+      profile = await FaceProfile.create(employeeId, aiResult.embedding);
+    }
+
+    await FaceSecurityLog.record(employeeId, 'REGISTER', 'SUCCESS', null);
+
+    return res.json({
+      success: true,
+      configured: true,
+      message: "Face ID registered successfully",
+      registeredAt: profile.face_registered_at || profile.registered_at
+    });
+  } catch (error) {
+    console.error("RegisterMyFaceId error:", error);
+    res.status(500).json({ success: false, message: "Failed to register Face ID: " + error.message });
+  }
+};
+
+const usedVerifyTokens = new Set();
+
+function validateAndConsumeVerifyToken(verifyToken, expectedEmployeeId) {
+  if (!verifyToken) {
+    return { valid: false, code: 401, message: "Biometric verification is required before performing this operation." };
+  }
+
+  let decoded;
+  try {
+    decoded = jwt.verify(verifyToken, JWT_SECRET);
+  } catch (err) {
+    return { valid: false, code: 401, message: "Invalid or expired biometric verification token. Please verify your Face ID again." };
+  }
+
+  if (!decoded.faceVerified || decoded.employeeId !== expectedEmployeeId) {
+    return { valid: false, code: 403, message: "Biometric verification token mismatch." };
+  }
+
+  if (decoded.jti && usedVerifyTokens.has(decoded.jti)) {
+    return { valid: false, code: 401, message: "Biometric verification token has already been used. Please verify your Face ID again." };
+  }
+
+  return { valid: true, decoded };
+}
+
+const verifyMyCurrentFace = async (req, res) => {
+  try {
+    const employeeId = await getEmployeeIdFromUser(req.user);
+    const { image } = req.body;
+
+    if (!employeeId) {
+      return res.status(400).json({ success: false, message: "User is not linked to an employee profile" });
+    }
+
+    if (!image) {
+      return res.status(400).json({ success: false, message: "Face image payload is required" });
+    }
+
+    const profile = await FaceProfile.getByEmployeeId(employeeId);
+    let storedEmbedding = profile?.face_embedding;
+    if (typeof storedEmbedding === 'string') {
+      try { storedEmbedding = JSON.parse(storedEmbedding); } catch(e) {}
+    }
+
+    if (!profile || !storedEmbedding || !Array.isArray(storedEmbedding) || storedEmbedding.length === 0) {
+      return res.status(400).json({ success: false, message: "No registered Face ID found to verify against." });
+    }
+
+    let aiResponse;
+    try {
+      aiResponse = await fetch("http://localhost:5001/api/ai/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image, embedding: storedEmbedding })
+      });
+    } catch (err) {
+      console.error("❌ AI Microservice connection failed:", err);
+      return res.status(502).json({ success: false, message: "AI Microservice is unreachable." });
+    }
+
+    const aiResult = await aiResponse.json();
+    if (!aiResponse.ok || !aiResult.success) {
+      await FaceSecurityLog.record(employeeId, 'VERIFY', 'FAILED', null);
+      return res.status(400).json({ success: false, message: aiResult.reason || "Verification failed", reason: aiResult.reason });
+    }
+
+    if (!aiResult.liveness) {
+      await FaceSecurityLog.record(employeeId, 'VERIFY', 'FAILED', null);
+      return res.status(400).json({ success: false, message: "Liveness verification failed (spoofing detected).", reason: "LIVENESS_FAILED" });
+    }
+
+    if (!aiResult.match) {
+      await FaceSecurityLog.record(employeeId, 'VERIFY', 'FAILED', null);
+      return res.status(400).json({ success: false, message: "Face does not match your currently registered profile.", reason: "FACE_NOT_MATCHED" });
+    }
+
+    await FaceSecurityLog.record(employeeId, 'VERIFY', 'SUCCESS', null);
+
+    const tokenId = crypto.randomUUID();
+    const verifyToken = jwt.sign(
+      { employeeId, faceVerified: true, jti: tokenId },
+      JWT_SECRET,
+      { expiresIn: '5m' }
+    );
+
+    return res.json({
+      success: true,
+      verified: true,
+      verifyToken
+    });
+  } catch (error) {
+    console.error("VerifyMyCurrentFace error:", error);
+    res.status(500).json({ success: false, message: "Failed to verify Face ID: " + error.message });
+  }
+};
+
+const updateMyFaceId = async (req, res) => {
+  try {
+    const employeeId = await getEmployeeIdFromUser(req.user);
+    const { image, verifyToken } = req.body;
+
+    if (!employeeId) {
+      return res.status(400).json({ success: false, message: "User is not linked to an employee profile" });
+    }
+
+    const tokenCheck = validateAndConsumeVerifyToken(verifyToken, employeeId);
+    if (!tokenCheck.valid) {
+      return res.status(tokenCheck.code).json({ success: false, message: tokenCheck.message });
+    }
+
+    if (!image) {
+      return res.status(400).json({ success: false, message: "Face image payload is required" });
+    }
+
+    let aiResponse;
+    try {
+      aiResponse = await fetch("http://localhost:5001/api/ai/embed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ image })
+      });
+    } catch (err) {
+      console.error("❌ AI Microservice connection failed:", err);
+      return res.status(502).json({ success: false, message: "AI Microservice is unreachable." });
+    }
+
+    const aiResult = await aiResponse.json();
+    if (!aiResponse.ok || !aiResult.success) {
+      const reason = aiResult.reason || "Failed to generate face signature";
+      await FaceSecurityLog.record(employeeId, 'UPDATE', 'FAILED', null);
+      return res.status(400).json({ success: false, message: reason, reason: aiResult.reason });
+    }
+
+    if (!aiResult.liveness) {
+      await FaceSecurityLog.record(employeeId, 'UPDATE', 'FAILED', null);
+      return res.status(400).json({ success: false, message: "Liveness verification failed (spoofing detected).", reason: "LIVENESS_FAILED" });
+    }
+
+    const profile = await FaceProfile.update(employeeId, aiResult.embedding);
+    await FaceSecurityLog.record(employeeId, 'UPDATE', 'SUCCESS', null);
+
+    // Consume token (single use)
+    if (tokenCheck.decoded.jti) {
+      usedVerifyTokens.add(tokenCheck.decoded.jti);
+    }
+
+    return res.json({
+      success: true,
+      configured: true,
+      message: "Face ID updated successfully",
+      registeredAt: profile.face_registered_at || profile.registered_at
+    });
+  } catch (error) {
+    console.error("UpdateMyFaceId error:", error);
+    res.status(500).json({ success: false, message: "Failed to update Face ID: " + error.message });
+  }
+};
+
+const deleteMyFaceId = async (req, res) => {
+  try {
+    const employeeId = await getEmployeeIdFromUser(req.user);
+    const { verifyToken } = req.body;
+
+    if (!employeeId) {
+      return res.status(400).json({ success: false, message: "User is not linked to an employee profile" });
+    }
+
+    const tokenCheck = validateAndConsumeVerifyToken(verifyToken, employeeId);
+    if (!tokenCheck.valid) {
+      return res.status(tokenCheck.code).json({ success: false, message: tokenCheck.message });
+    }
+
+    await FaceProfile.delete(employeeId);
+    await FaceSecurityLog.record(employeeId, 'REMOVE', 'SUCCESS', null);
+
+    // Consume token (single use)
+    if (tokenCheck.decoded.jti) {
+      usedVerifyTokens.add(tokenCheck.decoded.jti);
+    }
+
+    return res.json({
+      success: true,
+      configured: false,
+      message: "Face ID profile removed successfully"
+    });
+  } catch (error) {
+    console.error("DeleteMyFaceId error:", error);
+    res.status(500).json({ success: false, message: "Failed to remove Face ID: " + error.message });
+  }
+};
+
 module.exports = {
   login,
   faceLogin,
@@ -1112,5 +1432,10 @@ module.exports = {
   verifyActivationToken,
   resendActivationEmail,
   toggleUserStatus,
-  skipFaceIdSetup
+  skipFaceIdSetup,
+  getMyFaceIdStatus,
+  registerMyFaceId,
+  verifyMyCurrentFace,
+  updateMyFaceId,
+  deleteMyFaceId
 };

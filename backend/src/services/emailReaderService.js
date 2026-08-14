@@ -7,8 +7,8 @@ const { simpleParser } = require("mailparser");
 function createImapConnection() {
   const host = process.env.IMAP_HOST || "imap.gmail.com";
   const port = parseInt(process.env.IMAP_PORT || "993", 10);
-  const user = process.env.IMAP_USER || process.env.EMAIL_USER;
-  const password = process.env.IMAP_PASSWORD || process.env.EMAIL_PASSWORD;
+  const user = process.env.IMAP_USER || process.env.SMTP_USER;
+  const password = process.env.IMAP_PASSWORD || process.env.SMTP_PASSWORD;
 
   if (!user || !password) {
     throw new Error("IMAP credentials not configured (IMAP_USER / IMAP_PASSWORD)");
@@ -130,8 +130,8 @@ function fetchUnreadEmails() {
  * Check if email reader is properly configured.
  */
 function isConfigured() {
-  const user = process.env.IMAP_USER || process.env.EMAIL_USER;
-  const password = process.env.IMAP_PASSWORD || process.env.EMAIL_PASSWORD;
+  const user = process.env.IMAP_USER || process.env.SMTP_USER;
+  const password = process.env.IMAP_PASSWORD || process.env.SMTP_PASSWORD;
   return Boolean(user && password);
 }
 

@@ -3,6 +3,7 @@ const LeaveBalance = require("../models/LeaveBalance");
 const { getHolidays, countWorkingDays } = require("../services/attendanceService");
 const db = require("../config/database");
 const emailService = require("../utils/emailService");
+const notificationService = require("../services/notificationService");
 
 /**
  * Calculate the number of chargeable days for an absence period,
@@ -121,6 +122,28 @@ const createAbsence = async (req, res) => {
             employee_id: targetEmployeeId,
             source: 'employee_request'
         });
+
+        // Dispatch real-time notifications
+        try {
+            await notificationService.createNotification(
+                req.user.id,
+                "Leave Request Submitted",
+                `Your ${type} request (${start_date} to ${end_date}) was submitted successfully.`,
+                "success",
+                absence.id,
+                "absence"
+            );
+
+            await notificationService.notifyManagers(
+                "New Leave Request",
+                `Employee '${req.user.username}' submitted a ${type} request (${start_date} to ${end_date}).`,
+                "warning",
+                absence.id,
+                "absence"
+            );
+        } catch (notifErr) {
+            console.warn("⚠️ Absence creation notification warning:", notifErr.message);
+        }
 
         const responseMessage = holidayCount > 0
             ? `Absence created. Note: ${holidayCount} holiday day(s) in this period are excluded from the count. Chargeable days: ${chargeableDays}.`
@@ -324,6 +347,15 @@ const validateAbsence = async (req, res) => {
             );
             if (empUserRes.rows.length > 0) {
                 const empUser = empUserRes.rows[0];
+                notificationService.createNotification(
+                    empUser.id,
+                    "Leave Request Approved",
+                    `Your request for ${existing.type} (${existing.start_date} to ${existing.end_date}) has been approved by management.`,
+                    "success",
+                    absence.id,
+                    "absence"
+                ).catch(err => console.warn('⚠️ Leave approval notification warning:', err.message));
+
                 const isEnabled = empUser.approval_notifications !== false && empUser.email_notifications !== false;
                 if (isEnabled && empUser.email) {
                     emailService.sendLeaveApprovalEmail(
@@ -369,7 +401,7 @@ const rejectAbsence = async (req, res) => {
 
         const absence = await Absence.reject(id);
         
-        // Dispatch leave rejection email if enabled in recipient's user_settings
+        // Dispatch leave rejection email and notification if enabled in recipient's user_settings
         try {
             const empUserRes = await db.query(
                 `SELECT u.id, u.email, u.username, us.absence_notifications, us.email_notifications
@@ -380,6 +412,15 @@ const rejectAbsence = async (req, res) => {
             );
             if (empUserRes.rows.length > 0) {
                 const empUser = empUserRes.rows[0];
+                notificationService.createNotification(
+                    empUser.id,
+                    "Leave Request Rejected",
+                    `Your request for ${existing.type} (${existing.start_date} to ${existing.end_date}) was not approved.`,
+                    "error",
+                    absence.id,
+                    "absence"
+                ).catch(err => console.warn('⚠️ Leave rejection notification warning:', err.message));
+
                 const isEnabled = empUser.absence_notifications !== false && empUser.email_notifications !== false;
                 if (isEnabled && empUser.email) {
                     emailService.sendLeaveRejectionEmail(
