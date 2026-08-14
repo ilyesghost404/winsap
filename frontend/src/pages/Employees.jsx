@@ -320,7 +320,12 @@ const Employees = () => {
                 {filteredEmployees.map((employee) => {
                   const avatarColor = getAvatarGradient(employee.first_name + employee.last_name);
                   const deptStyle = getDeptColor(employee.department);
-                  const hasFace = !!employee.face_descriptor;
+                  const isFaceEnrolled = Boolean(
+                    employee.is_face_enrolled ||
+                    employee.biometric_status === 'Enrolled' ||
+                    (employee.face_status === 'active' && employee.face_profile_id)
+                  );
+                  const bioStatus = employee.biometric_status || (isFaceEnrolled ? 'Enrolled' : 'Not Enrolled');
 
                   return (
                     <tr key={employee.id} className="hover:bg-[#e7f0fa]/60 transition-colors">
@@ -370,14 +375,16 @@ const Employees = () => {
 
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         <div className="flex items-center gap-2">
-                          <StatusBadge status={hasFace ? 'Enrolled' : 'Not Enrolled'} type="dot" />
-                          <button
-                            onClick={() => setRegisteringFaceEmployee(employee)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-[#2563eb] hover:bg-[#eff6ff] transition-colors cursor-pointer"
-                            title={hasFace ? 'Re-enroll Face' : 'Register Biometric Face'}
-                          >
-                            <Camera size={15} />
-                          </button>
+                          <StatusBadge status={bioStatus} type="dot" />
+                          {!isFaceEnrolled && (
+                            <button
+                              onClick={() => setRegisteringFaceEmployee(employee)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-[#2563eb] hover:bg-[#eff6ff] transition-colors cursor-pointer"
+                              title="Register Biometric Face"
+                            >
+                              <Camera size={15} />
+                            </button>
+                          )}
                         </div>
                       </td>
 

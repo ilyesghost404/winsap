@@ -5,8 +5,8 @@ class Employee {
         const { page = 1, limit = 10, search = '' } = params;
         const offset = (page - 1) * limit;
 
-        let baseQuery = "FROM employees e LEFT JOIN departments d ON e.department_id = d.id LEFT JOIN users u ON u.employee_id = e.id";
-        let countQuery = `SELECT COUNT(*) ${baseQuery}`;
+        let baseQuery = "FROM employees e LEFT JOIN departments d ON e.department_id = d.id LEFT JOIN users u ON u.employee_id = e.id LEFT JOIN face_profiles fp ON fp.employee_id = e.id";
+        let countQuery = `SELECT COUNT(DISTINCT e.id) ${baseQuery}`;
         let dataQuery = `
             SELECT 
                 e.*, 
@@ -20,7 +20,17 @@ class Employee {
                     WHEN u.is_active = false OR u.account_status = 'Disabled' THEN 'Disabled'
                     WHEN u.account_status ILIKE 'Pending%' THEN 'Pending Activation'
                     ELSE 'Active'
-                END as account_status
+                END as account_status,
+                fp.id as face_profile_id,
+                fp.status as face_status,
+                fp.face_enabled,
+                (fp.id IS NOT NULL AND fp.status = 'active' AND (fp.face_enabled = true OR fp.face_enabled IS NULL) AND fp.face_embedding IS NOT NULL) as is_face_enrolled,
+                CASE
+                    WHEN fp.id IS NULL OR fp.face_embedding IS NULL THEN 'Not Enrolled'
+                    WHEN fp.status = 'active' AND (fp.face_enabled = true OR fp.face_enabled IS NULL) THEN 'Enrolled'
+                    WHEN fp.status = 'disabled' OR fp.face_enabled = false THEN 'Disabled'
+                    ELSE 'Not Enrolled'
+                END as biometric_status
             ${baseQuery}
         `;
         const queryParams = [];
@@ -60,10 +70,25 @@ class Employee {
     }
 
     static async getById(id) {
-        const result = await db.query(
-            "SELECT e.*, d.name as department FROM employees e LEFT JOIN departments d ON e.department_id = d.id WHERE e.id = $1", 
-            [id]
-        );
+        const result = await db.query(`
+            SELECT 
+                e.*, 
+                d.name as department,
+                fp.id as face_profile_id,
+                fp.status as face_status,
+                fp.face_enabled,
+                (fp.id IS NOT NULL AND fp.status = 'active' AND (fp.face_enabled = true OR fp.face_enabled IS NULL) AND fp.face_embedding IS NOT NULL) as is_face_enrolled,
+                CASE
+                    WHEN fp.id IS NULL OR fp.face_embedding IS NULL THEN 'Not Enrolled'
+                    WHEN fp.status = 'active' AND (fp.face_enabled = true OR fp.face_enabled IS NULL) THEN 'Enrolled'
+                    WHEN fp.status = 'disabled' OR fp.face_enabled = false THEN 'Disabled'
+                    ELSE 'Not Enrolled'
+                END as biometric_status
+            FROM employees e 
+            LEFT JOIN departments d ON e.department_id = d.id 
+            LEFT JOIN face_profiles fp ON fp.employee_id = e.id
+            WHERE e.id = $1
+        `, [id]);
         return result.rows[0];
     }
 

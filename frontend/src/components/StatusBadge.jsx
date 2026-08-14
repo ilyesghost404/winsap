@@ -19,14 +19,14 @@ const StatusBadge = ({ status, type = 'soft', className = '' }) => {
     const s = String(statusString || '').toLowerCase().trim();
 
     // Success & Active
-    if (['approved', 'validated', 'active', 'added', 'healthy', 'enabled', 'completed', 'success', 'present'].includes(s)) {
+    if (['approved', 'validated', 'active', 'added', 'healthy', 'enabled', 'completed', 'success', 'present', 'enrolled', 'configured'].includes(s)) {
       return {
         color: 'text-emerald-700',
         bg: 'bg-emerald-50',
         border: 'border-emerald-200',
         icon: CheckCircle2,
         dot: 'bg-emerald-500 shadow-xs shadow-emerald-400',
-        label: statusString || 'Active'
+        label: s === 'enrolled' ? 'Enrolled' : s === 'configured' ? 'Configured' : (statusString || 'Active')
       };
     }
 
@@ -66,15 +66,18 @@ const StatusBadge = ({ status, type = 'soft', className = '' }) => {
       };
     }
 
-    // No Account
-    if (['no account', 'no_account', 'none', 'unlinked'].includes(s)) {
+    // Not Enrolled / Not Configured / No Account
+    if (['not enrolled', 'not_enrolled', 'not configured', 'not_configured', 'no account', 'no_account', 'none', 'unlinked'].includes(s)) {
+      let label = 'No Account';
+      if (s.includes('enrolled')) label = 'Not Enrolled';
+      if (s.includes('configured')) label = 'Not Configured';
       return {
         color: 'text-slate-600',
         bg: 'bg-slate-100',
         border: 'border-slate-200/80',
         icon: AlertCircle,
         dot: 'bg-slate-400',
-        label: 'No Account'
+        label
       };
     }
 
